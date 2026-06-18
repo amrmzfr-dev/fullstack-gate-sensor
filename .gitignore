@@ -8,8 +8,8 @@ obj/
 *.user
 dist/
 build/
-target/
-cfg.toml
+.pio/
+firmware/*/include/secrets.h
 .env.prod
 .env.dev
 mosquitto/passwd.prod

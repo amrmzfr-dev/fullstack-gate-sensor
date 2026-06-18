@@ -1,3 +1,0 @@
-[workspace]
-members = ["transmitter", "receiver"]
-resolver = "2"
