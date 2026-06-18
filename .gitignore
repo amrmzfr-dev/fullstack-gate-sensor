@@ -1,0 +1,16 @@
+node_modules/
+bin/
+obj/
+.env
+.env.*
+!.env.prod.example
+!.env.dev.example
+*.user
+dist/
+build/
+target/
+cfg.toml
+.env.prod
+.env.dev
+mosquitto/passwd.prod
+mosquitto/passwd.dev

@@ -1,0 +1,101 @@
+# Backend: build on GHA, stream image to VPS (no ghcr pull on server).
+# develop -> dev only | main -> prod only
+name: Backend Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+      - 'mosquitto/**'
+      - 'docker-compose.prod.yml'
+      - 'docker-compose.dev.yml'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - run: dotnet build backend/GateSensor.Api.csproj
+
+      - id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: true
+          load: true
+          tags: |
+            ghcr.io/amrmzfr-dev/fullstack-gate-sensor-backend:latest
+            ghcr.io/amrmzfr-dev/fullstack-gate-sensor-backend:${{ steps.meta.outputs.sha_short }}
+
+      - name: Deploy to dev VPS
+        if: github.ref == 'refs/heads/develop'
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          SRC_IMAGE="ghcr.io/amrmzfr-dev/fullstack-gate-sensor-backend:${{ steps.meta.outputs.sha_short }}"
+          KEY_DIR="${RUNNER_TEMP}/deploy-ssh"
+          mkdir -p "$KEY_DIR"
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY_DIR/key"
+          chmod 600 "$KEY_DIR/key"
+          SSH_PORT="${VPS_PORT:-22}"
+          SSH_BASE=(ssh -i "$KEY_DIR/key" -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+          scp -i "$KEY_DIR/key" -P "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            docker-compose.dev.yml "${VPS_USER}@${VPS_HOST}:/opt/gate-sensor-dev/docker-compose.dev.yml"
+          "${SSH_BASE[@]}" "${VPS_USER}@${VPS_HOST}" "mkdir -p /opt/gate-sensor-dev/mosquitto"
+          scp -i "$KEY_DIR/key" -P "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            mosquitto/mosquitto.dev.conf "${VPS_USER}@${VPS_HOST}:/opt/gate-sensor-dev/mosquitto/mosquitto.dev.conf"
+          docker save "$SRC_IMAGE" | gzip -1 | "${SSH_BASE[@]}" "${VPS_USER}@${VPS_HOST}" 'gunzip -c | docker load'
+          "${SSH_BASE[@]}" "${VPS_USER}@${VPS_HOST}" \
+            "docker tag '$SRC_IMAGE' 'ghcr.io/amrmzfr-dev/fullstack-gate-sensor-backend:latest' && cd /opt/gate-sensor-dev && docker compose -f docker-compose.dev.yml stop backend || true && docker compose -f docker-compose.dev.yml rm -f backend || true && docker compose -f docker-compose.dev.yml up -d --no-deps backend"
+
+      - name: Deploy to prod VPS
+        if: github.ref == 'refs/heads/main'
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          SRC_IMAGE="ghcr.io/amrmzfr-dev/fullstack-gate-sensor-backend:${{ steps.meta.outputs.sha_short }}"
+          KEY_DIR="${RUNNER_TEMP}/deploy-ssh"
+          mkdir -p "$KEY_DIR"
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY_DIR/key"
+          chmod 600 "$KEY_DIR/key"
+          SSH_PORT="${VPS_PORT:-22}"
+          SSH_BASE=(ssh -i "$KEY_DIR/key" -p "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+          scp -i "$KEY_DIR/key" -P "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            docker-compose.prod.yml "${VPS_USER}@${VPS_HOST}:/opt/gate-sensor-prod/docker-compose.prod.yml"
+          "${SSH_BASE[@]}" "${VPS_USER}@${VPS_HOST}" "mkdir -p /opt/gate-sensor-prod/mosquitto"
+          scp -i "$KEY_DIR/key" -P "$SSH_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            mosquitto/mosquitto.prod.conf "${VPS_USER}@${VPS_HOST}:/opt/gate-sensor-prod/mosquitto/mosquitto.prod.conf"
+          docker save "$SRC_IMAGE" | gzip -1 | "${SSH_BASE[@]}" "${VPS_USER}@${VPS_HOST}" 'gunzip -c | docker load'
+          "${SSH_BASE[@]}" "${VPS_USER}@${VPS_HOST}" \
+            "docker tag '$SRC_IMAGE' 'ghcr.io/amrmzfr-dev/fullstack-gate-sensor-backend:latest' && cd /opt/gate-sensor-prod && docker compose -f docker-compose.prod.yml stop backend || true && docker compose -f docker-compose.prod.yml rm -f backend || true && docker compose -f docker-compose.prod.yml up -d --no-deps backend"
