@@ -1,3 +1,4 @@
+# trigger: force CI rebuild after enabling Actions
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
