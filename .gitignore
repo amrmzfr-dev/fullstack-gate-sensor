@@ -14,3 +14,5 @@ firmware/*/include/secrets.h
 .env.dev
 mosquitto/passwd.prod
 mosquitto/passwd.dev
+CONTEXT.md
+.context-archive/
