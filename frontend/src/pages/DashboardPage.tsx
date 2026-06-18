@@ -1,14 +1,74 @@
-import { AlertTriangle, Bell, BellOff, Clock, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  BellOff,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
+import type { GateEventRecord } from "@/types";
 
 function formatTimestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "medium",
   }).format(new Date(value));
+}
+
+interface PipelineStepProps {
+  label: string;
+  done: boolean;
+  timestamp: string | null;
+}
+
+function PipelineStep({ label, done, timestamp }: PipelineStepProps) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {done ? (
+        <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+      ) : (
+        <Loader2 className="size-3.5 animate-spin text-amber-500" />
+      )}
+      <span className={done ? "text-foreground" : "text-muted-foreground"}>
+        {label}
+      </span>
+      {timestamp && (
+        <span className="text-muted-foreground">
+          ({formatTimestamp(timestamp)})
+        </span>
+      )}
+    </div>
+  );
+}
+
+function EventPipeline({ event }: { event: GateEventRecord }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <PipelineStep
+        label="Sensor triggered"
+        done
+        timestamp={event.timestamp}
+      />
+      <ArrowRight className="size-3 text-muted-foreground" />
+      <PipelineStep
+        label="Relayed to buzzer"
+        done={event.relayedAt !== null}
+        timestamp={event.relayedAt}
+      />
+      <ArrowRight className="size-3 text-muted-foreground" />
+      <PipelineStep
+        label="Receiver confirmed"
+        done={event.receiverConfirmedAt !== null}
+        timestamp={event.receiverConfirmedAt}
+      />
+    </div>
+  );
 }
 
 export function DashboardPage() {
@@ -107,22 +167,22 @@ export function DashboardPage() {
           ) : (
             <ul className="divide-y divide-border">
               {events.map((event) => (
-                <li
-                  key={event.id}
-                  className="flex items-center justify-between px-6 py-3 text-sm"
-                >
-                  <span
-                    className={
-                      event.event === "on"
-                        ? "font-medium text-destructive"
-                        : "text-muted-foreground"
-                    }
-                  >
-                    {event.event === "on" ? "Trigger ON" : "Trigger OFF"}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatTimestamp(event.timestamp)}
-                  </span>
+                <li key={event.id} className="space-y-1.5 px-6 py-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={
+                        event.event === "on"
+                          ? "font-medium text-destructive"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {event.event === "on" ? "Trigger ON" : "Trigger OFF"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatTimestamp(event.timestamp)}
+                    </span>
+                  </div>
+                  <EventPipeline event={event} />
                 </li>
               ))}
             </ul>

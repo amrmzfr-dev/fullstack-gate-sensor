@@ -21,6 +21,8 @@ export async function fetchGateEvents(
       id: string;
       event: string;
       timestamp: string;
+      relayedAt: string | null;
+      receiverConfirmedAt: string | null;
     }>
   >(`/gate/events?limit=${limit}`);
 
@@ -28,5 +30,7 @@ export async function fetchGateEvents(
     id: record.id,
     event: record.event === "on" ? "on" : "off",
     timestamp: record.timestamp,
+    relayedAt: record.relayedAt,
+    receiverConfirmedAt: record.receiverConfirmedAt,
   }));
 }

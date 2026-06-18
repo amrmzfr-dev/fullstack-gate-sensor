@@ -8,6 +8,7 @@
 namespace {
 
 constexpr uint8_t kIrSensorPin = 4;
+constexpr uint8_t kSimButtonPin = 0;  // BOOT button — simulates the IR sensor when no real sensor is wired
 constexpr char kTriggerTopic[] = "gate/trigger";
 constexpr char kMqttClientId[] = "gate-transmitter";
 constexpr unsigned long kPollIntervalMs = 75;
@@ -59,13 +60,20 @@ bool publishTrigger(const char* event) {
   return true;
 }
 
+// True if the real IR sensor is HIGH, or the BOOT button is held (simulated
+// trigger for testing without the physical sensor wired up — BOOT reads LOW
+// when pressed since it has an onboard pull-up).
+bool sensorActive() {
+  return digitalRead(kIrSensorPin) == HIGH || digitalRead(kSimButtonPin) == LOW;
+}
+
 bool debouncedHigh() {
-  if (digitalRead(kIrSensorPin) != HIGH) {
+  if (!sensorActive()) {
     return false;
   }
 
   delay(kDebounceMs);
-  return digitalRead(kIrSensorPin) == HIGH;
+  return sensorActive();
 }
 
 void connectWiFiBlocking() {
@@ -90,7 +98,9 @@ void onWiFiEvent(WiFiEvent_t event) {
     case SYSTEM_EVENT_STA_GOT_IP:
 #endif
       Serial.println("WiFi got IP — connecting MQTT");
-      connectMqtt();
+      if (!mqttClient.connected()) {
+        connectMqtt();
+      }
       break;
 #if defined(ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -110,13 +120,18 @@ void onWiFiEvent(WiFiEvent_t event) {
 void setup() {
   Serial.begin(115200);
   pinMode(kIrSensorPin, INPUT_PULLDOWN);
+  pinMode(kSimButtonPin, INPUT_PULLUP);
 
   mqttClient.onConnect(onMqttConnect);
   mqttClient.onDisconnect(onMqttDisconnect);
 
   WiFi.onEvent(onWiFiEvent);
   connectWiFiBlocking();
-  connectMqtt();
+  // connectMqtt() is NOT called here — onWiFiEvent's GOT_IP case already
+  // triggers it as soon as the IP is obtained (which happens asynchronously
+  // during the blocking wait above). Calling it again here raced a second
+  // connection with the same client ID, causing mosquitto to repeatedly
+  // kick the first session ("session taken over").
 }
 
 void loop() {
@@ -141,7 +156,7 @@ void loop() {
 
     case TransmitterState::Cooldown:
       if (now >= stateDeadlineMs) {
-        if (digitalRead(kIrSensorPin) == HIGH) {
+        if (sensorActive()) {
           publishTrigger("on");
           state = TransmitterState::Buzzing;
           stateDeadlineMs = now + kCycleMs;

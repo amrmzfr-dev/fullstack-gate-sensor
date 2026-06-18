@@ -34,15 +34,20 @@ public sealed class MqttRelayHostedService(
                     return;
                 }
 
-                await HandleTriggerMessageAsync(
-                    args.ApplicationMessage.Topic,
-                    payloadText,
-                    mqttClient,
-                    stoppingToken);
+                var topic = args.ApplicationMessage.Topic;
+
+                if (string.Equals(topic, MqttTopics.Trigger, StringComparison.Ordinal))
+                {
+                    await HandleTriggerMessageAsync(payloadText, mqttClient, stoppingToken);
+                }
+                else if (string.Equals(topic, MqttTopics.ReceiverAck, StringComparison.Ordinal))
+                {
+                    await HandleReceiverAckAsync(payloadText, stoppingToken);
+                }
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to process MQTT trigger message");
+                logger.LogError(ex, "Failed to process MQTT message");
             }
         };
 
@@ -76,10 +81,16 @@ public sealed class MqttRelayHostedService(
                         .WithTopicFilter(filter => filter
                             .WithTopic(MqttTopics.Trigger)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
+                        .WithTopicFilter(filter => filter
+                            .WithTopic(MqttTopics.ReceiverAck)
+                            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .Build();
 
                     await mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
-                    logger.LogInformation("MQTT relay connected and subscribed to {Topic}", MqttTopics.Trigger);
+                    logger.LogInformation(
+                        "MQTT relay connected and subscribed to {TriggerTopic} and {AckTopic}",
+                        MqttTopics.Trigger,
+                        MqttTopics.ReceiverAck);
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
@@ -102,19 +113,11 @@ public sealed class MqttRelayHostedService(
     }
 
     private async Task HandleTriggerMessageAsync(
-        string topic,
         string payloadText,
         IMqttClient mqttClient,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(topic, MqttTopics.Trigger, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var payload = JsonSerializer.Deserialize<TriggerPayload>(
-            payloadText,
-            JsonOptions);
+        var payload = JsonSerializer.Deserialize<TriggerPayload>(payloadText, JsonOptions);
 
         if (payload?.Event is not ("on" or "off"))
         {
@@ -126,18 +129,19 @@ public sealed class MqttRelayHostedService(
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var alertState = scope.ServiceProvider.GetRequiredService<IGateAlertState>();
 
-        dbContext.GateEvents.Add(new GateEvent
+        var gateEvent = new GateEvent
         {
             Id = Guid.NewGuid(),
             Event = payload.Event,
             Timestamp = DateTime.UtcNow,
-        });
+        };
+        dbContext.GateEvents.Add(gateEvent);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var alertActive = payload.Event == "on";
         await alertState.SetAlertAsync(alertActive, cancellationToken);
 
-        var buzzerPayload = JsonSerializer.Serialize(new BuzzerPayload(alertActive));
+        var buzzerPayload = JsonSerializer.Serialize(new BuzzerPayload(alertActive, gateEvent.Id));
         var buzzerMessage = new MqttApplicationMessageBuilder()
             .WithTopic(MqttTopics.Buzzer)
             .WithPayload(buzzerPayload)
@@ -147,9 +151,44 @@ public sealed class MqttRelayHostedService(
 
         await mqttClient.PublishAsync(buzzerMessage, cancellationToken);
 
+        gateEvent.RelayedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
         logger.LogInformation(
-            "Relayed trigger event {Event} to {Topic}",
+            "Relayed trigger event {Event} (eventId={EventId}) to {Topic}",
             payload.Event,
+            gateEvent.Id,
             MqttTopics.Buzzer);
+    }
+
+    private async Task HandleReceiverAckAsync(string payloadText, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<ReceiverAckPayload>(payloadText, JsonOptions);
+
+        if (payload is null || payload.EventId == Guid.Empty)
+        {
+            logger.LogWarning("Ignoring receiver ack with missing eventId");
+            return;
+        }
+
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var gateEvent = await dbContext.GateEvents
+            .FirstOrDefaultAsync(e => e.Id == payload.EventId, cancellationToken);
+
+        if (gateEvent is null)
+        {
+            logger.LogWarning("Receiver ack referenced unknown eventId {EventId}", payload.EventId);
+            return;
+        }
+
+        gateEvent.ReceiverConfirmedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Receiver confirmed event {EventId} (on={On})",
+            payload.EventId,
+            payload.On);
     }
 }

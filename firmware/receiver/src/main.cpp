@@ -9,6 +9,7 @@ namespace {
 
 constexpr uint8_t kBuzzerPin = 5;
 constexpr char kBuzzerTopic[] = "gate/buzzer";
+constexpr char kAckTopic[] = "gate/receiver/ack";
 constexpr char kMqttClientId[] = "gate-receiver";
 
 AsyncMqttClient mqttClient;
@@ -55,8 +56,18 @@ void onMqttMessage(char* topic,
   }
 
   const bool buzzerOn = doc["on"] | false;
+  const char* eventId = doc["eventId"] | "";
+
   digitalWrite(kBuzzerPin, buzzerOn ? HIGH : LOW);
-  Serial.printf("Buzzer %s\n", buzzerOn ? "ON" : "OFF");
+  Serial.printf("Buzzer %s (eventId=%s)\n", buzzerOn ? "ON" : "OFF", eventId);
+
+  StaticJsonDocument<96> ackDoc;
+  ackDoc["on"] = buzzerOn;
+  ackDoc["eventId"] = eventId;
+
+  char ackPayload[96];
+  const size_t ackLength = serializeJson(ackDoc, ackPayload, sizeof(ackPayload));
+  mqttClient.publish(kAckTopic, 1, false, ackPayload, ackLength);
 }
 
 void connectWiFiBlocking() {
@@ -81,7 +92,9 @@ void onWiFiEvent(WiFiEvent_t event) {
     case SYSTEM_EVENT_STA_GOT_IP:
 #endif
       Serial.println("WiFi got IP — connecting MQTT");
-      connectMqtt();
+      if (!mqttClient.connected()) {
+        connectMqtt();
+      }
       break;
 #if defined(ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -109,7 +122,7 @@ void setup() {
 
   WiFi.onEvent(onWiFiEvent);
   connectWiFiBlocking();
-  connectMqtt();
+  // connectMqtt() is NOT called here — see transmitter/src/main.cpp for why.
 }
 
 void loop() {

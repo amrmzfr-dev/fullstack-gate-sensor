@@ -34,4 +34,6 @@ export interface GateEventRecord {
   id: string;
   event: "on" | "off";
   timestamp: string;
+  relayedAt: string | null;
+  receiverConfirmedAt: string | null;
 }
