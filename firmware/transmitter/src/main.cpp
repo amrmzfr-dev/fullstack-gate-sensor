@@ -15,26 +15,25 @@ constexpr uint8_t kSimButtonPin = 0;  // BOOT button — simulates the IR sensor
 constexpr char kTriggerTopic[] = "gate/trigger";
 constexpr char kMqttClientId[] = "gate-transmitter";
 // Bump this with every release that gets copied into backend/wwwroot/firmware/transmitter/.
-constexpr char kFirmwareVersion[] = "1.1.0";
+constexpr char kFirmwareVersion[] = "1.2.0";
 constexpr char kFirmwareTopic[] = "firmware/transmitter/latest";
 constexpr unsigned long kPollIntervalMs = 75;
 constexpr unsigned long kDebounceMs = 50;
-// A car driving through an already-open gate breaks the beam for well under
-// this long — only treat it as a real "something is blocking the gate"
-// incident once the sensor has stayed high continuously for kConfirmMs.
-constexpr unsigned long kConfirmMs = 5000;
-constexpr unsigned long kBuzzMs = 10000;
-// The gate takes time to physically open — give it room before re-alerting
-// on the same incident instead of buzzing again right as cooldown ends.
-constexpr unsigned long kCooldownMs = 15000;
+// Every detected block pings the receiver immediately — no "wait and see if
+// it's just a car passing through" delay. The receiver guarantees a full 7s
+// alert per ping regardless, so a brief block still gets the full alert.
+// While the sensor stays active, re-ping at this interval so the receiver's
+// rolling 7s window keeps getting refreshed ("something is still there").
+// Must stay comfortably under the receiver's kAlertWindowMs (7000) so a ping
+// always lands before the previous one's deadline expires.
+constexpr unsigned long kPingIntervalMs = 5000;
 constexpr unsigned long kWifiResetHoldMs = 3000;
 
-enum class TransmitterState { Idle, Confirming, Buzzing, Cooldown };
+enum class TransmitterState { Idle, Active };
 
 AsyncMqttClient mqttClient;
 TransmitterState state = TransmitterState::Idle;
-unsigned long stateDeadlineMs = 0;
-unsigned long confirmStartMs = 0;
+unsigned long lastPingMs = 0;
 bool mqttConnected = false;
 
 void connectMqtt() {
@@ -269,40 +268,23 @@ void loop() {
   switch (state) {
     case TransmitterState::Idle:
       if (debouncedHigh()) {
-        state = TransmitterState::Confirming;
-        confirmStartMs = now;
-      }
-      break;
-
-    case TransmitterState::Confirming:
-      if (!sensorActive()) {
-        state = TransmitterState::Idle;  // cleared before the confirm window elapsed — treat as a pass-through, not a block
-      } else if (now - confirmStartMs >= kConfirmMs) {
         publishTrigger("on");
-        state = TransmitterState::Buzzing;
-        stateDeadlineMs = now + kBuzzMs;
+        state = TransmitterState::Active;
+        lastPingMs = now;
       }
       break;
 
-    case TransmitterState::Buzzing:
-      if (now >= stateDeadlineMs) {
-        publishTrigger("off");
-        state = TransmitterState::Cooldown;
-        stateDeadlineMs = now + kCooldownMs;
-      }
-      break;
-
-    case TransmitterState::Cooldown:
-      if (now >= stateDeadlineMs) {
-        if (sensorActive()) {
-          // Already a confirmed incident — re-alert immediately, no need to
-          // re-run the confirm window for a block that never cleared.
-          publishTrigger("on");
-          state = TransmitterState::Buzzing;
-          stateDeadlineMs = now + kBuzzMs;
-        } else {
-          state = TransmitterState::Idle;
+    case TransmitterState::Active:
+      if (sensorActive()) {
+        if (now - lastPingMs >= kPingIntervalMs) {
+          publishTrigger("on");  // refresh the receiver's rolling alert window
+          lastPingMs = now;
         }
+      } else {
+        // Logged for the dashboard only — the receiver ignores "off" and
+        // always rides out its own 7s window regardless of how this clears.
+        publishTrigger("off");
+        state = TransmitterState::Idle;
       }
       break;
   }

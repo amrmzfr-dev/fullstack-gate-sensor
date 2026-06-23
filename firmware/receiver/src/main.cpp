@@ -16,19 +16,19 @@ constexpr char kBuzzerTopic[] = "gate/buzzer";
 constexpr char kAckTopic[] = "gate/receiver/ack";
 constexpr char kMqttClientId[] = "gate-receiver";
 // Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
-constexpr char kFirmwareVersion[] = "1.2.0";
+constexpr char kFirmwareVersion[] = "1.3.0";
 constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
 constexpr unsigned long kBeepOnMs = 1000;    // each beep lasts 1s
 constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cycle
 constexpr unsigned long kPauseMs = 2000;     // 2s pause after a cycle before looping
 constexpr uint8_t kBeepsPerCycle = 5;
 constexpr unsigned long kWifiResetHoldMs = 3000;
-// Safety net: the transmitter normally sends its own "off" ~10s after "on",
-// but if it resets mid-cycle (e.g. EN pressed) that "off" is lost forever and
-// the buzzer would otherwise loop until manually silenced. Every "on" message
-// (including retransmits) pushes this deadline out, so a healthy transmitter
-// never trips it — it only fires when "off" genuinely never arrives.
-constexpr unsigned long kMaxAlertMs = 10000;
+// Every "on" ping guarantees at least this long of alerting, however brief
+// the trigger was — "off" is intentionally ignored for buzzer control (the
+// transmitter only sends it for the dashboard log). While the sensor stays
+// blocked, the transmitter re-pings before this deadline, pushing it out —
+// that's how "still there" keeps the alarm going past the 7s minimum.
+constexpr unsigned long kAlertWindowMs = 7000;
 
 enum class BuzzerPhase { kOn, kGap, kPause };
 
@@ -174,14 +174,20 @@ void onMqttMessage(char* topic,
   const bool buzzerOn = doc["on"] | false;
   const char* eventId = doc["eventId"] | "";
 
-  buzzerActive = buzzerOn;
-  beepIndex = 0;
-  buzzerPhase = BuzzerPhase::kOn;
-  lastToggleMs = millis();
   if (buzzerOn) {
-    alertDeadlineMs = millis() + kMaxAlertMs;
+    alertDeadlineMs = millis() + kAlertWindowMs;  // (re)start or extend the rolling window
+    if (!buzzerActive) {
+      // Fresh trigger from idle — start the beep pattern from the top. If
+      // already alerting, leave the in-flight beep/gap/pause cycle alone so
+      // a refresh ping doesn't audibly restart it.
+      buzzerActive = true;
+      beepIndex = 0;
+      buzzerPhase = BuzzerPhase::kOn;
+      lastToggleMs = millis();
+      setBuzzerPin(true);
+    }
   }
-  setBuzzerPin(buzzerOn);  // start beeping immediately rather than waiting a full cycle
+  // "off" is intentionally ignored here — see kAlertWindowMs comment above.
   Serial.printf("Buzzer %s (eventId=%s)\n", buzzerOn ? "ON" : "OFF", eventId);
 
   StaticJsonDocument<96> ackDoc;
