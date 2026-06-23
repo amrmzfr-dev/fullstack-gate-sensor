@@ -16,7 +16,7 @@ constexpr char kBuzzerTopic[] = "gate/buzzer";
 constexpr char kAckTopic[] = "gate/receiver/ack";
 constexpr char kMqttClientId[] = "gate-receiver";
 // Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
-constexpr char kFirmwareVersion[] = "1.1.0";
+constexpr char kFirmwareVersion[] = "1.2.0";
 constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
 constexpr unsigned long kBeepOnMs = 1000;    // each beep lasts 1s
 constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cycle
