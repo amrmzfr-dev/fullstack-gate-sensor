@@ -37,3 +37,16 @@ export interface GateEventRecord {
   relayedAt: string | null;
   receiverConfirmedAt: string | null;
 }
+
+export type FirmwareDevice = "transmitter" | "receiver";
+
+export interface FirmwareManifest {
+  version: string;
+  url: string;
+  md5: string;
+}
+
+export interface DeviceFirmwareStatus {
+  device: FirmwareDevice;
+  manifest: FirmwareManifest | null;
+}

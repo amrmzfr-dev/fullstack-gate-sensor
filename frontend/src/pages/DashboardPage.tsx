@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import { FirmwarePanel } from "@/components/FirmwarePanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
@@ -188,6 +189,8 @@ export function DashboardPage() {
             </ul>
           )}
         </section>
+
+        <FirmwarePanel />
       </main>
     </div>
   );

@@ -67,6 +67,19 @@ export async function apiPut<T, B = unknown>(
   return parseResponse<T>(response);
 }
 
+export async function apiPostForm<T>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: formData,
+  });
+
+  return parseResponse<T>(response);
+}
+
 export async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "DELETE",
