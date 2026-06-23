@@ -12,6 +12,7 @@ namespace GateSensor.Api.Mqtt;
 public sealed class MqttRelayHostedService(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
+    IWebHostEnvironment webHostEnvironment,
     ILogger<MqttRelayHostedService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -91,6 +92,8 @@ public sealed class MqttRelayHostedService(
                         "MQTT relay connected and subscribed to {TriggerTopic} and {AckTopic}",
                         MqttTopics.Trigger,
                         MqttTopics.ReceiverAck);
+
+                    await PublishFirmwareManifestsAsync(mqttClient, stoppingToken);
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
@@ -190,5 +193,39 @@ public sealed class MqttRelayHostedService(
             "Receiver confirmed event {EventId} (on={On})",
             payload.EventId,
             payload.On);
+    }
+
+    // Devices subscribe to firmware/{device}/latest once at boot. Publishing
+    // retained means a device gets the current manifest immediately on
+    // connect (no polling), and a live push the moment a new manifest lands
+    // here and the backend reconnects/restarts.
+    private async Task PublishFirmwareManifestsAsync(IMqttClient mqttClient, CancellationToken cancellationToken)
+    {
+        var webRoot = webHostEnvironment.WebRootPath;
+        if (string.IsNullOrEmpty(webRoot))
+        {
+            return;
+        }
+
+        foreach (var device in MqttTopics.OtaDevices)
+        {
+            var manifestPath = Path.Combine(webRoot, "firmware", device, "manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                continue;
+            }
+
+            var manifestJson = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic(MqttTopics.FirmwareLatest(device))
+                .WithPayload(manifestJson)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithRetainFlag(true)
+                .Build();
+
+            await mqttClient.PublishAsync(message, cancellationToken);
+            logger.LogInformation("Published firmware manifest for {Device}", device);
+        }
     }
 }

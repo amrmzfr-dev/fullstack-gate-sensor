@@ -1,19 +1,54 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiManager.h>
 #include <AsyncMqttClient.h>
 #include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <Update.h>
 
 #include "secrets.h"
 
 namespace {
 
 constexpr uint8_t kBuzzerPin = 5;
+constexpr uint8_t kConfigResetPin = 0;  // BOOT button — hold at startup to force the WiFi setup portal
 constexpr char kBuzzerTopic[] = "gate/buzzer";
 constexpr char kAckTopic[] = "gate/receiver/ack";
 constexpr char kMqttClientId[] = "gate-receiver";
+// Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
+constexpr char kFirmwareVersion[] = "1.1.0";
+constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
+constexpr unsigned long kBeepOnMs = 1000;    // each beep lasts 1s
+constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cycle
+constexpr unsigned long kPauseMs = 2000;     // 2s pause after a cycle before looping
+constexpr uint8_t kBeepsPerCycle = 5;
+constexpr unsigned long kWifiResetHoldMs = 3000;
+// Safety net: the transmitter normally sends its own "off" ~10s after "on",
+// but if it resets mid-cycle (e.g. EN pressed) that "off" is lost forever and
+// the buzzer would otherwise loop until manually silenced. Every "on" message
+// (including retransmits) pushes this deadline out, so a healthy transmitter
+// never trips it — it only fires when "off" genuinely never arrives.
+constexpr unsigned long kMaxAlertMs = 10000;
+
+enum class BuzzerPhase { kOn, kGap, kPause };
 
 AsyncMqttClient mqttClient;
 bool mqttConnected = false;
+
+// Pulsing state — kept separate from "is the alert logically active" so the
+// buzzer runs its 3-beeps-then-pause pattern instead of holding one continuous tone.
+bool buzzerActive = false;
+bool buzzerPinOn = false;
+BuzzerPhase buzzerPhase = BuzzerPhase::kOn;
+uint8_t beepIndex = 0;
+unsigned long lastToggleMs = 0;
+unsigned long alertDeadlineMs = 0;
+
+void setBuzzerPin(bool on) {
+  buzzerPinOn = on;
+  digitalWrite(kBuzzerPin, on ? LOW : HIGH);  // low-level-trigger module
+  Serial.printf("[buzzer] pin=%s beepIndex=%u/%u\n", on ? "ON" : "OFF", beepIndex, kBeepsPerCycle);
+}
 
 void connectMqtt() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
@@ -22,10 +57,86 @@ void connectMqtt() {
   mqttClient.connect();
 }
 
+// See firmware/transmitter/src/main.cpp's performOta for the same caveat:
+// plain HTTP, no signature check beyond the MD5 integrity hash.
+void performOta(const String& url, const String& expectedMd5) {
+  Serial.printf("OTA: downloading %s\n", url.c_str());
+
+  HTTPClient http;
+  if (!http.begin(url)) {
+    Serial.println("OTA: failed to begin HTTP request");
+    return;
+  }
+
+  const int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("OTA: HTTP GET failed, code=%d\n", httpCode);
+    http.end();
+    return;
+  }
+
+  const int contentLength = http.getSize();
+  if (contentLength <= 0) {
+    Serial.println("OTA: invalid content length");
+    http.end();
+    return;
+  }
+
+  if (!Update.begin(contentLength)) {
+    Serial.printf("OTA: Update.begin failed: %s\n", Update.errorString());
+    http.end();
+    return;
+  }
+
+  if (expectedMd5.length() > 0) {
+    Update.setMD5(expectedMd5.c_str());
+  }
+
+  const size_t written = Update.writeStream(*http.getStreamPtr());
+  if (written != static_cast<size_t>(contentLength)) {
+    Serial.printf("OTA: wrote %u of %d bytes\n", static_cast<unsigned>(written), contentLength);
+  }
+
+  if (!Update.end() || !Update.isFinished()) {
+    Serial.printf("OTA: update failed: %s\n", Update.errorString());
+    http.end();
+    return;
+  }
+
+  Serial.println("OTA: success — restarting into new firmware");
+  http.end();
+  delay(500);
+  ESP.restart();
+}
+
+void onFirmwareManifest(char* payload, size_t len) {
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.println("OTA: failed to parse firmware manifest");
+    return;
+  }
+
+  const char* version = doc["version"] | "";
+  const char* url = doc["url"] | "";
+  const char* md5 = doc["md5"] | "";
+
+  if (strlen(version) == 0 || strlen(url) == 0) {
+    return;
+  }
+
+  if (strcmp(version, kFirmwareVersion) == 0) {
+    return;  // already running this version
+  }
+
+  Serial.printf("OTA: new firmware available (%s -> %s)\n", kFirmwareVersion, version);
+  performOta(String(url), String(md5));
+}
+
 void onMqttConnect(bool /*sessionPresent*/) {
   Serial.println("MQTT connected");
   mqttConnected = true;
   mqttClient.subscribe(kBuzzerTopic, 1);
+  mqttClient.subscribe(kFirmwareTopic, 1);
   Serial.printf("Subscribed to %s (QoS 1)\n", kBuzzerTopic);
 }
 
@@ -44,6 +155,11 @@ void onMqttMessage(char* topic,
                    size_t len,
                    size_t /*index*/,
                    size_t /*total*/) {
+  if (strcmp(topic, kFirmwareTopic) == 0) {
+    onFirmwareManifest(payload, len);
+    return;
+  }
+
   if (strcmp(topic, kBuzzerTopic) != 0) {
     return;
   }
@@ -58,7 +174,14 @@ void onMqttMessage(char* topic,
   const bool buzzerOn = doc["on"] | false;
   const char* eventId = doc["eventId"] | "";
 
-  digitalWrite(kBuzzerPin, buzzerOn ? HIGH : LOW);
+  buzzerActive = buzzerOn;
+  beepIndex = 0;
+  buzzerPhase = BuzzerPhase::kOn;
+  lastToggleMs = millis();
+  if (buzzerOn) {
+    alertDeadlineMs = millis() + kMaxAlertMs;
+  }
+  setBuzzerPin(buzzerOn);  // start beeping immediately rather than waiting a full cycle
   Serial.printf("Buzzer %s (eventId=%s)\n", buzzerOn ? "ON" : "OFF", eventId);
 
   StaticJsonDocument<96> ackDoc;
@@ -70,16 +193,34 @@ void onMqttMessage(char* topic,
   mqttClient.publish(kAckTopic, 1, false, ackPayload, ackLength);
 }
 
+// See firmware/transmitter/src/main.cpp for why WiFi is configured via
+// WiFiManager's captive portal instead of being compiled in.
 void connectWiFiBlocking() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180);
 
-  Serial.printf("Connecting to WiFi \"%s\"", WIFI_SSID);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print('.');
+  // Require a deliberate 3s hold before wiping saved WiFi credentials.
+  // BOOT also has to be held to put the board into flashing mode, and it can
+  // still be pressed for a moment after the post-upload reset — a plain
+  // instantaneous check here would wipe the real WiFi config on every flash.
+  if (digitalRead(kConfigResetPin) == LOW) {
+    const unsigned long holdStart = millis();
+    while (digitalRead(kConfigResetPin) == LOW && millis() - holdStart < kWifiResetHoldMs) {
+      delay(50);
+    }
+    if (digitalRead(kConfigResetPin) == LOW) {
+      Serial.println("BOOT held 3s+ at startup — forcing WiFi setup portal");
+      wm.resetSettings();
+    }
   }
-  Serial.println();
+
+  Serial.println("Connecting to WiFi (or starting \"GateSensor-Receiver-Setup\" portal)...");
+  if (!wm.autoConnect("GateSensor-Receiver-Setup")) {
+    Serial.println("WiFi setup timed out — restarting to try again");
+    delay(1000);
+    ESP.restart();
+  }
+
   Serial.print("WiFi connected, IP: ");
   Serial.println(WiFi.localIP());
 }
@@ -113,8 +254,11 @@ void onWiFiEvent(WiFiEvent_t event) {
 
 void setup() {
   Serial.begin(115200);
+  Serial.printf("[boot] firmware=%s kBeepsPerCycle=%u kBeepOnMs=%lu kBeepGapMs=%lu kPauseMs=%lu\n",
+                kFirmwareVersion, kBeepsPerCycle, kBeepOnMs, kBeepGapMs, kPauseMs);
   pinMode(kBuzzerPin, OUTPUT);
-  digitalWrite(kBuzzerPin, LOW);
+  setBuzzerPin(false);
+  pinMode(kConfigResetPin, INPUT_PULLUP);
 
   mqttClient.onConnect(onMqttConnect);
   mqttClient.onDisconnect(onMqttDisconnect);
@@ -126,5 +270,43 @@ void setup() {
 }
 
 void loop() {
-  delay(100);
+  if (buzzerActive && millis() >= alertDeadlineMs) {
+    Serial.println("Safety timeout — no \"off\" received in time, silencing buzzer");
+    buzzerActive = false;
+    setBuzzerPin(false);
+  }
+
+  if (buzzerActive) {
+    const unsigned long elapsed = millis() - lastToggleMs;
+
+    switch (buzzerPhase) {
+      case BuzzerPhase::kOn:
+        if (elapsed >= kBeepOnMs) {
+          setBuzzerPin(false);
+          beepIndex++;
+          buzzerPhase = (beepIndex >= kBeepsPerCycle) ? BuzzerPhase::kPause : BuzzerPhase::kGap;
+          lastToggleMs = millis();
+        }
+        break;
+      case BuzzerPhase::kGap:
+        if (elapsed >= kBeepGapMs) {
+          setBuzzerPin(true);
+          buzzerPhase = BuzzerPhase::kOn;
+          lastToggleMs = millis();
+        }
+        break;
+      case BuzzerPhase::kPause:
+        if (elapsed >= kPauseMs) {
+          beepIndex = 0;
+          setBuzzerPin(true);
+          buzzerPhase = BuzzerPhase::kOn;
+          lastToggleMs = millis();
+        }
+        break;
+    }
+  } else if (buzzerPinOn) {
+    setBuzzerPin(false);
+  }
+
+  delay(20);
 }

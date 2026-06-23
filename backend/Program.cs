@@ -1,6 +1,7 @@
 using GateSensor.Api.Data;
 using GateSensor.Api.Mqtt;
 using GateSensor.Api.Services;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -50,6 +51,17 @@ if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+var firmwareContentTypeProvider = new FileExtensionContentTypeProvider();
+firmwareContentTypeProvider.Mappings[".bin"] = "application/octet-stream";
+
+// Serves /firmware/{device}/firmware.bin and /firmware/{device}/manifest.json
+// for OTA — devices pull the binary over HTTP after getting notified via the
+// retained firmware/{device}/latest MQTT topic (see MqttRelayHostedService).
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = firmwareContentTypeProvider,
+});
 
 app.UseCors("Frontend");
 app.UseAuthorization();
