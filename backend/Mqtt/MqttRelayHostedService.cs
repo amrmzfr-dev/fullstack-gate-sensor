@@ -14,12 +14,15 @@ public sealed class MqttRelayHostedService(
     IConfiguration configuration,
     IWebHostEnvironment webHostEnvironment,
     IDeviceStatusStore deviceStatusStore,
+    IDeviceConfigStore deviceConfigStore,
     ILogger<MqttRelayHostedService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
     };
+
+    private static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerDefaults.Web);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -103,6 +106,7 @@ public sealed class MqttRelayHostedService(
                         MqttTopics.DeviceStatusWildcard);
 
                     await PublishFirmwareManifestsAsync(mqttClient, stoppingToken);
+                    await PublishDeviceConfigsAsync(mqttClient, stoppingToken);
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
@@ -263,5 +267,37 @@ public sealed class MqttRelayHostedService(
             await mqttClient.PublishAsync(message, cancellationToken);
             logger.LogInformation("Published firmware manifest for {Device}", device);
         }
+    }
+
+    // Re-publishes the stored device configs (retained) on every (re)connect, so
+    // the store stays the source of truth: a device coming online always gets
+    // the current settings even if the broker's retained copy was cleared.
+    private async Task PublishDeviceConfigsAsync(IMqttClient mqttClient, CancellationToken cancellationToken)
+    {
+        var receiver = await deviceConfigStore.GetReceiverConfigAsync(cancellationToken);
+        var transmitter = await deviceConfigStore.GetTransmitterConfigAsync(cancellationToken);
+
+        await PublishRetainedAsync(mqttClient, MqttTopics.DeviceConfig("receiver"),
+            JsonSerializer.Serialize(receiver, PayloadJson), cancellationToken);
+        await PublishRetainedAsync(mqttClient, MqttTopics.DeviceConfig("transmitter"),
+            JsonSerializer.Serialize(transmitter, PayloadJson), cancellationToken);
+
+        logger.LogInformation("Published device configs (receiver, transmitter)");
+    }
+
+    private static Task PublishRetainedAsync(
+        IMqttClient mqttClient,
+        string topic,
+        string payload,
+        CancellationToken cancellationToken)
+    {
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(payload)
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .WithRetainFlag(true)
+            .Build();
+
+        return mqttClient.PublishAsync(message, cancellationToken);
     }
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -7,13 +8,16 @@ import {
   Clock,
   Loader2,
   RefreshCw,
+  VolumeX,
   Wifi,
   WifiOff,
 } from "lucide-react";
 
+import { DeviceSettingsPanel } from "@/components/DeviceSettingsPanel";
 import { FirmwarePanel } from "@/components/FirmwarePanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { useDeviceConfig } from "@/hooks/useDeviceConfig";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
 import type { DeviceLiveStatus, GateEventRecord } from "@/types";
 
@@ -116,8 +120,30 @@ function EventPipeline({ event }: { event: GateEventRecord }) {
 
 export function DashboardPage() {
   const { status, events, devices, loading, error, refresh } = useGateMonitor();
+  const {
+    config,
+    saving,
+    acknowledging,
+    saveReceiver,
+    saveTransmitter,
+    acknowledge,
+  } = useDeviceConfig();
+
+  const [ackMessage, setAckMessage] = useState<string | null>(null);
 
   const alertActive = status?.alertActive ?? false;
+  const cooldownMs = config?.receiver.acknowledgeCooldownMs ?? 30000;
+  const cooldownSeconds = Math.round(cooldownMs / 1000);
+
+  const handleAcknowledge = async () => {
+    try {
+      await acknowledge();
+      setAckMessage(`Silenced — buzzer stays quiet for ${cooldownSeconds}s`);
+    } catch {
+      setAckMessage("Couldn't reach the receiver to silence it");
+    }
+    window.setTimeout(() => setAckMessage(null), 5000);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -191,6 +217,21 @@ export function DashboardPage() {
               {alertActive ? <Bell className="size-5" /> : <BellOff className="size-5" />}
             </div>
           </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border/60 pt-4">
+            <Button
+              variant={alertActive ? "default" : "outline"}
+              disabled={acknowledging}
+              onClick={() => {
+                void handleAcknowledge();
+              }}
+            >
+              {acknowledging ? <Loader2 className="animate-spin" /> : <VolumeX />}
+              Acknowledge &amp; silence ({cooldownSeconds}s)
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {ackMessage ?? "Lets the client confirm they're aware and quiet the buzzer"}
+            </span>
+          </div>
           {error && (
             <p className="mt-4 text-sm text-destructive">{error}</p>
           )}
@@ -215,6 +256,15 @@ export function DashboardPage() {
             )}
           </div>
         </section>
+
+        {config && (
+          <DeviceSettingsPanel
+            config={config}
+            saving={saving}
+            onSaveReceiver={saveReceiver}
+            onSaveTransmitter={saveTransmitter}
+          />
+        )}
 
         <section className="rounded-lg border border-border bg-card">
           <div className="border-b border-border px-6 py-4">

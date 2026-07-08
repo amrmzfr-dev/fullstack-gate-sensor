@@ -13,9 +13,15 @@ public static class MqttTopics
     // watches all of them via the single-level wildcard.
     public const string DeviceStatusWildcard = "gate/+/status";
 
+    // One-shot command channel for the receiver (e.g. acknowledge/silence).
+    public const string ReceiverCommand = "gate/receiver/command";
+
     public static readonly string[] OtaDevices = ["transmitter", "receiver"];
 
     public static string FirmwareLatest(string device) => $"firmware/{device}/latest";
+
+    // Retained per-device runtime settings the firmware applies live.
+    public static string DeviceConfig(string device) => $"gate/{device}/config";
 
     public static string DeviceStatus(string device) => $"gate/{device}/status";
 

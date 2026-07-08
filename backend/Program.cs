@@ -22,7 +22,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 
 builder.Services.AddSingleton<IGateAlertState, RedisGateAlertState>();
 builder.Services.AddSingleton<IDeviceStatusStore, RedisDeviceStatusStore>();
+builder.Services.AddSingleton<IDeviceConfigStore, RedisDeviceConfigStore>();
 builder.Services.AddSingleton<IFirmwarePublisher, MqttFirmwarePublisher>();
+builder.Services.AddSingleton<IMqttPublisher, MqttPublisher>();
 builder.Services.AddHostedService<MqttRelayHostedService>();
 
 var allowedOrigins = builder.Configuration

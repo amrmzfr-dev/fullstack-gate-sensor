@@ -23,9 +23,12 @@ constexpr char kStatusTopic[] = "gate/transmitter/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/transmitter/.
-constexpr char kFirmwareVersion[] = "1.4.0";
+constexpr char kFirmwareVersion[] = "1.5.0";
 constexpr char kFirmwareTopic[] = "firmware/transmitter/latest";
+// Retained runtime settings the backend pushes (re-ping interval, debounce).
+constexpr char kConfigTopic[] = "gate/transmitter/config";
 constexpr unsigned long kPollIntervalMs = 75;
+// Defaults below double as the fallback config for an unconfigured unit.
 constexpr unsigned long kDebounceMs = 50;
 // Every detected block pings the receiver immediately — no "wait and see if
 // it's just a car passing through" delay. The receiver guarantees a full 7s
@@ -48,6 +51,19 @@ bool mqttConnected = false;
 String mqttClientId;
 // Last time we published a liveness heartbeat (main task only).
 unsigned long lastHeartbeatMs = 0;
+
+// Runtime settings pushed retained from the backend over gate/transmitter/config
+// and applied live. Defaults match the old compiled-in constants. loop() owns
+// the live copy; the callback stages the pending one under stateMux.
+unsigned long pingIntervalMs = kPingIntervalMs;
+unsigned long debounceMs = kDebounceMs;
+volatile bool configPending = false;
+volatile unsigned long pendingPingIntervalMs = kPingIntervalMs;
+volatile unsigned long pendingDebounceMs = kDebounceMs;
+
+unsigned long clampUL(unsigned long value, unsigned long lo, unsigned long hi) {
+  return value < lo ? lo : (value > hi ? hi : value);
+}
 
 // Guards the OTA handoff from the MQTT callback (AsyncTCP task) to loop()
 // (main task).
@@ -199,6 +215,27 @@ void onFirmwareManifest(char* payload, size_t len) {
   portEXIT_CRITICAL(&stateMux);
 }
 
+// Parses a retained config push and stages it for loop() to apply. Values are
+// clamped; the re-ping interval is also kept under 6.5s so it stays below the
+// receiver's alert window (the backend enforces the exact relationship).
+void onTransmitterConfig(char* payload, size_t len) {
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.println("config: parse failed");
+    return;
+  }
+
+  const unsigned long ping = clampUL(doc["pingIntervalMs"] | kPingIntervalMs, 500, 6500);
+  const unsigned long debounce = clampUL(doc["debounceMs"] | kDebounceMs, 0, 2000);
+
+  portENTER_CRITICAL(&stateMux);
+  pendingPingIntervalMs = ping;
+  pendingDebounceMs = debounce;
+  configPending = true;
+  portEXIT_CRITICAL(&stateMux);
+  Serial.printf("config: ping=%lu debounce=%lu\n", ping, debounce);
+}
+
 void onMqttMessage(char* topic,
                     char* payload,
                     AsyncMqttClientMessageProperties /*properties*/,
@@ -207,6 +244,8 @@ void onMqttMessage(char* topic,
                     size_t /*total*/) {
   if (strcmp(topic, kFirmwareTopic) == 0) {
     onFirmwareManifest(payload, len);
+  } else if (strcmp(topic, kConfigTopic) == 0) {
+    onTransmitterConfig(payload, len);
   }
 }
 
@@ -214,6 +253,7 @@ void onMqttConnect(bool /*sessionPresent*/) {
   Serial.println("MQTT connected");
   mqttConnected = true;
   mqttClient.subscribe(kFirmwareTopic, 1);
+  mqttClient.subscribe(kConfigTopic, 1);
   publishStatusOnline();  // announce we're alive (clears any retained "offline")
 }
 
@@ -264,7 +304,7 @@ bool debouncedHigh() {
     return false;
   }
 
-  delay(kDebounceMs);
+  delay(debounceMs);
   return sensorActive();
 }
 
@@ -404,6 +444,15 @@ void loop() {
     publishStatusOnline();
   }
 
+  // Apply any new config handed over from the MQTT callback.
+  portENTER_CRITICAL(&stateMux);
+  if (configPending) {
+    configPending = false;
+    pingIntervalMs = pendingPingIntervalMs;
+    debounceMs = pendingDebounceMs;
+  }
+  portEXIT_CRITICAL(&stateMux);
+
   const unsigned long now = millis();
 
   switch (state) {
@@ -422,7 +471,7 @@ void loop() {
         // Same retry logic: only push the deadline out once the ping
         // actually lands, so a dropped one is retried next tick instead of
         // waiting a full kPingIntervalMs longer.
-        if (now - lastPingMs >= kPingIntervalMs && publishTrigger("on")) {
+        if (now - lastPingMs >= pingIntervalMs && publishTrigger("on")) {
           lastPingMs = now;
         }
       } else {

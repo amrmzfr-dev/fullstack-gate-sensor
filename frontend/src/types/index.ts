@@ -38,6 +38,25 @@ export interface DeviceLiveStatus {
   ipAddress: string | null;
 }
 
+export interface ReceiverConfig {
+  beepOnMs: number;
+  beepGapMs: number;
+  pauseMs: number;
+  beepsPerCycle: number;
+  alertWindowMs: number;
+  acknowledgeCooldownMs: number;
+}
+
+export interface TransmitterConfig {
+  pingIntervalMs: number;
+  debounceMs: number;
+}
+
+export interface DeviceConfig {
+  receiver: ReceiverConfig;
+  transmitter: TransmitterConfig;
+}
+
 export interface GateEventRecord {
   id: string;
   event: "on" | "off";

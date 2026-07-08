@@ -25,8 +25,14 @@ constexpr char kStatusTopic[] = "gate/receiver/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
-constexpr char kFirmwareVersion[] = "1.4.0";
+constexpr char kFirmwareVersion[] = "1.5.0";
 constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
+// Retained beep settings the backend pushes, and one-shot commands (e.g. the
+// dashboard's acknowledge/silence button).
+constexpr char kConfigTopic[] = "gate/receiver/config";
+constexpr char kCommandTopic[] = "gate/receiver/command";
+constexpr unsigned long kDefaultCooldownMs = 30000;
+// Defaults below double as the fallback config for an unconfigured unit.
 constexpr unsigned long kBeepOnMs = 1000;    // each beep lasts 1s
 constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cycle
 constexpr unsigned long kPauseMs = 2000;     // 2s pause after a cycle before looping
@@ -68,8 +74,30 @@ char otaMd5[40] = {0};
 
 // Buzzer "on" ping handed from the MQTT callback to loop(). loop() owns the
 // whole pulsing state machine, so nothing below is ever touched from two tasks.
+// The alert deadline is computed in loop() from the live config when the ping
+// is consumed, so the callback only has to raise this flag.
 volatile bool alertPending = false;
-volatile unsigned long pendingAlertDeadline = 0;
+
+// Runtime beep configuration, pushed retained from the backend over
+// gate/receiver/config and applied live. Defaults match the old compiled-in
+// constants, so an unconfigured unit behaves exactly as it did before.
+struct BeepConfig {
+  unsigned long beepOnMs;
+  unsigned long beepGapMs;
+  unsigned long pauseMs;
+  unsigned long alertWindowMs;
+  uint8_t beepsPerCycle;
+};
+BeepConfig cfg = {kBeepOnMs, kBeepGapMs, kPauseMs, kAlertWindowMs, kBeepsPerCycle};  // loop-owned
+BeepConfig pendingCfg = cfg;        // guarded by stateMux
+volatile bool configPending = false;
+
+// Acknowledge/cooldown: a "silence" command silences the buzzer now and makes
+// loop() ignore incoming alerts until the cooldown expires, so the client can
+// quiet a known alert for a configurable few seconds.
+volatile bool cooldownPending = false;
+volatile unsigned long pendingCooldownMs = 0;
+unsigned long cooldownUntilMs = 0;  // loop-owned; alerts ignored while now < this
 
 // Pulsing state — kept separate from "is the alert logically active" so the
 // buzzer runs its 3-beeps-then-pause pattern instead of holding one continuous tone.
@@ -81,10 +109,14 @@ uint8_t beepIndex = 0;
 unsigned long lastToggleMs = 0;
 unsigned long alertDeadlineMs = 0;
 
+unsigned long clampUL(unsigned long value, unsigned long lo, unsigned long hi) {
+  return value < lo ? lo : (value > hi ? hi : value);
+}
+
 void setBuzzerPin(bool on) {
   buzzerPinOn = on;
   digitalWrite(kBuzzerPin, on ? LOW : HIGH);  // low-level-trigger module
-  Serial.printf("[buzzer] pin=%s beepIndex=%u/%u\n", on ? "ON" : "OFF", beepIndex, kBeepsPerCycle);
+  Serial.printf("[buzzer] pin=%s beepIndex=%u/%u\n", on ? "ON" : "OFF", beepIndex, cfg.beepsPerCycle);
 }
 
 // Publishes the retained "online" liveness status (with firmware version and
@@ -218,12 +250,59 @@ void onFirmwareManifest(char* payload, size_t len) {
   portEXIT_CRITICAL(&stateMux);
 }
 
+// Parses a retained config push and hands it to loop() to apply. Every field
+// is clamped to a sane range so a bad value can't wedge the buzzer.
+void onReceiverConfig(char* payload, size_t len) {
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.println("config: parse failed");
+    return;
+  }
+
+  BeepConfig c;
+  c.beepOnMs = clampUL(doc["beepOnMs"] | kBeepOnMs, 50, 60000);
+  c.beepGapMs = clampUL(doc["beepGapMs"] | kBeepGapMs, 0, 60000);
+  c.pauseMs = clampUL(doc["pauseMs"] | kPauseMs, 0, 60000);
+  c.alertWindowMs = clampUL(doc["alertWindowMs"] | kAlertWindowMs, 1000, 600000);
+  c.beepsPerCycle =
+      static_cast<uint8_t>(clampUL(doc["beepsPerCycle"] | static_cast<unsigned long>(kBeepsPerCycle), 1, 50));
+
+  portENTER_CRITICAL(&stateMux);
+  pendingCfg = c;
+  configPending = true;
+  portEXIT_CRITICAL(&stateMux);
+  Serial.printf("config: on=%lu gap=%lu pause=%lu window=%lu beeps=%u\n",
+                c.beepOnMs, c.beepGapMs, c.pauseMs, c.alertWindowMs, c.beepsPerCycle);
+}
+
+// Handles one-shot commands. Today just "silence" (acknowledge), which quiets
+// the buzzer and starts a cooldown during which alerts are ignored.
+void onReceiverCommand(char* payload, size_t len) {
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    return;
+  }
+
+  const char* action = doc["action"] | "";
+  if (strcmp(action, "silence") == 0) {
+    const unsigned long cd = clampUL(doc["cooldownMs"] | kDefaultCooldownMs, 0, 3600000);
+    portENTER_CRITICAL(&stateMux);
+    pendingCooldownMs = cd;
+    cooldownPending = true;
+    portEXIT_CRITICAL(&stateMux);
+    Serial.printf("command: silence (cooldown=%lu ms)\n", cd);
+  }
+}
+
 void onMqttConnect(bool /*sessionPresent*/) {
   Serial.println("MQTT connected");
   mqttConnected = true;
   mqttClient.subscribe(kBuzzerTopic, 1);
   mqttClient.subscribe(kFirmwareTopic, 1);
-  Serial.printf("Subscribed to %s and %s (QoS 1)\n", kBuzzerTopic, kFirmwareTopic);
+  mqttClient.subscribe(kConfigTopic, 1);
+  mqttClient.subscribe(kCommandTopic, 1);
+  Serial.printf("Subscribed to %s, %s, %s, %s (QoS 1)\n",
+                kBuzzerTopic, kFirmwareTopic, kConfigTopic, kCommandTopic);
   publishStatusOnline();  // announce we're alive (clears any retained "offline")
 }
 
@@ -244,6 +323,16 @@ void onMqttMessage(char* topic,
                    size_t /*total*/) {
   if (strcmp(topic, kFirmwareTopic) == 0) {
     onFirmwareManifest(payload, len);
+    return;
+  }
+
+  if (strcmp(topic, kConfigTopic) == 0) {
+    onReceiverConfig(payload, len);
+    return;
+  }
+
+  if (strcmp(topic, kCommandTopic) == 0) {
+    onReceiverCommand(payload, len);
     return;
   }
 
@@ -273,12 +362,11 @@ void onMqttMessage(char* topic,
   const char* eventId = doc["eventId"] | "";
 
   if (buzzerOn) {
-    // Hand the ping over to loop(), which owns the buzzer state machine and
-    // the pin — nothing here touches either, so there's no cross-task race.
-    // "off" is intentionally ignored — see kAlertWindowMs comment above.
-    const unsigned long deadline = millis() + kAlertWindowMs;
+    // Hand the ping over to loop(), which owns the buzzer state machine, the
+    // pin, and the live config (it computes the deadline from cfg.alertWindowMs
+    // when it consumes this). "off" is intentionally ignored — see the
+    // kAlertWindowMs comment above.
     portENTER_CRITICAL(&stateMux);
-    pendingAlertDeadline = deadline;
     alertPending = true;
     portEXIT_CRITICAL(&stateMux);
   }
@@ -424,27 +512,58 @@ void loop() {
     publishStatusOnline();
   }
 
-  // Consume any buzzer "on" ping handed over from the MQTT callback.
-  bool startAlert = false;
-  unsigned long newDeadline = 0;
+  // Apply any new beep config handed over from the MQTT callback.
   portENTER_CRITICAL(&stateMux);
-  if (alertPending) {
+  const bool applyCfg = configPending;
+  if (applyCfg) {
+    configPending = false;
+    cfg = pendingCfg;
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (applyCfg) {
+    Serial.println("Applied new beep config");
+  }
+
+  // Apply an acknowledge/silence command: quiet the buzzer now and start the
+  // cooldown window during which alerts are ignored.
+  portENTER_CRITICAL(&stateMux);
+  const bool applyCooldown = cooldownPending;
+  const unsigned long cooldownMs = pendingCooldownMs;
+  if (applyCooldown) {
+    cooldownPending = false;
+    alertPending = false;  // drop any queued alert too
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (applyCooldown) {
+    cooldownUntilMs = millis() + cooldownMs;
+    buzzerActive = false;
+    setBuzzerPin(false);
+    Serial.printf("Acknowledged — silenced, cooling down for %lu ms\n", cooldownMs);
+  }
+
+  // Consume any buzzer "on" ping handed over from the MQTT callback.
+  portENTER_CRITICAL(&stateMux);
+  const bool startAlert = alertPending;
+  if (startAlert) {
     alertPending = false;
-    newDeadline = pendingAlertDeadline;
-    startAlert = true;
   }
   portEXIT_CRITICAL(&stateMux);
   if (startAlert) {
-    alertDeadlineMs = newDeadline;  // (re)start or extend the rolling window
-    if (!buzzerActive) {
-      // Fresh trigger from idle — start the beep pattern from the top. If
-      // already alerting, leave the in-flight beep/gap/pause cycle alone so a
-      // refresh ping doesn't audibly restart it.
-      buzzerActive = true;
-      beepIndex = 0;
-      buzzerPhase = BuzzerPhase::kOn;
-      lastToggleMs = millis();
-      setBuzzerPin(true);
+    // Ignore alerts while cooling down from an acknowledge.
+    if (static_cast<int32_t>(millis() - cooldownUntilMs) < 0) {
+      Serial.println("In cooldown — ignoring alert ping");
+    } else {
+      alertDeadlineMs = millis() + cfg.alertWindowMs;  // (re)start or extend the window
+      if (!buzzerActive) {
+        // Fresh trigger from idle — start the beep pattern from the top. If
+        // already alerting, leave the in-flight beep/gap/pause cycle alone so a
+        // refresh ping doesn't audibly restart it.
+        buzzerActive = true;
+        beepIndex = 0;
+        buzzerPhase = BuzzerPhase::kOn;
+        lastToggleMs = millis();
+        setBuzzerPin(true);
+      }
     }
   }
 
@@ -462,22 +581,22 @@ void loop() {
 
     switch (buzzerPhase) {
       case BuzzerPhase::kOn:
-        if (elapsed >= kBeepOnMs) {
+        if (elapsed >= cfg.beepOnMs) {
           setBuzzerPin(false);
           beepIndex++;
-          buzzerPhase = (beepIndex >= kBeepsPerCycle) ? BuzzerPhase::kPause : BuzzerPhase::kGap;
+          buzzerPhase = (beepIndex >= cfg.beepsPerCycle) ? BuzzerPhase::kPause : BuzzerPhase::kGap;
           lastToggleMs = millis();
         }
         break;
       case BuzzerPhase::kGap:
-        if (elapsed >= kBeepGapMs) {
+        if (elapsed >= cfg.beepGapMs) {
           setBuzzerPin(true);
           buzzerPhase = BuzzerPhase::kOn;
           lastToggleMs = millis();
         }
         break;
       case BuzzerPhase::kPause:
-        if (elapsed >= kPauseMs) {
+        if (elapsed >= cfg.pauseMs) {
           beepIndex = 0;
           setBuzzerPin(true);
           buzzerPhase = BuzzerPhase::kOn;
