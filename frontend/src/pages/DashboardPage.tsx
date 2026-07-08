@@ -278,7 +278,7 @@ export function DashboardPage() {
               {loading ? "Loading events..." : "No trigger events recorded yet"}
             </p>
           ) : (
-            <ul className="divide-y divide-border">
+            <ul className="max-h-80 divide-y divide-border overflow-y-auto">
               {events.map((event) => (
                 <li key={event.id} className="space-y-1.5 px-6 py-3 text-sm">
                   <div className="flex items-center justify-between">
