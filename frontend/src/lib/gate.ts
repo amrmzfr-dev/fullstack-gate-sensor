@@ -1,5 +1,5 @@
 import { apiGet } from "@/lib/api";
-import type { GateEventRecord, GateStatus } from "@/types";
+import type { DeviceLiveStatus, GateEventRecord, GateStatus } from "@/types";
 
 export async function fetchGateStatus(): Promise<GateStatus> {
   const response = await apiGet<{
@@ -11,6 +11,26 @@ export async function fetchGateStatus(): Promise<GateStatus> {
     alertActive: response.alertActive,
     updatedAt: response.updatedAt,
   };
+}
+
+export async function fetchDeviceStatuses(): Promise<DeviceLiveStatus[]> {
+  const response = await apiGet<
+    Array<{
+      device: string;
+      online: boolean;
+      lastSeenAt: string | null;
+      firmwareVersion: string | null;
+      ipAddress: string | null;
+    }>
+  >("/device/status");
+
+  return response.map((record) => ({
+    device: record.device,
+    online: record.online,
+    lastSeenAt: record.lastSeenAt,
+    firmwareVersion: record.firmwareVersion,
+    ipAddress: record.ipAddress,
+  }));
 }
 
 export async function fetchGateEvents(

@@ -21,6 +21,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(redisConnectionString));
 
 builder.Services.AddSingleton<IGateAlertState, RedisGateAlertState>();
+builder.Services.AddSingleton<IDeviceStatusStore, RedisDeviceStatusStore>();
 builder.Services.AddSingleton<IFirmwarePublisher, MqttFirmwarePublisher>();
 builder.Services.AddHostedService<MqttRelayHostedService>();
 

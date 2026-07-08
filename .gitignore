@@ -9,6 +9,7 @@ obj/
 dist/
 build/
 .pio/
+firmware/target/
 firmware/*/include/secrets.h
 .env.prod
 .env.dev

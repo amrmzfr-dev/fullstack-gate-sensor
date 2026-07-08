@@ -13,6 +13,7 @@ public sealed class MqttRelayHostedService(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
     IWebHostEnvironment webHostEnvironment,
+    IDeviceStatusStore deviceStatusStore,
     ILogger<MqttRelayHostedService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -44,6 +45,10 @@ public sealed class MqttRelayHostedService(
                 else if (string.Equals(topic, MqttTopics.ReceiverAck, StringComparison.Ordinal))
                 {
                     await HandleReceiverAckAsync(payloadText, stoppingToken);
+                }
+                else if (MqttTopics.DeviceFromStatusTopic(topic) is { } statusDevice)
+                {
+                    await HandleDeviceStatusAsync(statusDevice, payloadText, stoppingToken);
                 }
             }
             catch (Exception ex)
@@ -85,13 +90,17 @@ public sealed class MqttRelayHostedService(
                         .WithTopicFilter(filter => filter
                             .WithTopic(MqttTopics.ReceiverAck)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
+                        .WithTopicFilter(filter => filter
+                            .WithTopic(MqttTopics.DeviceStatusWildcard)
+                            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .Build();
 
                     await mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
                     logger.LogInformation(
-                        "MQTT relay connected and subscribed to {TriggerTopic} and {AckTopic}",
+                        "MQTT relay connected and subscribed to {TriggerTopic}, {AckTopic} and {StatusTopic}",
                         MqttTopics.Trigger,
-                        MqttTopics.ReceiverAck);
+                        MqttTopics.ReceiverAck,
+                        MqttTopics.DeviceStatusWildcard);
 
                     await PublishFirmwareManifestsAsync(mqttClient, stoppingToken);
                 }
@@ -193,6 +202,33 @@ public sealed class MqttRelayHostedService(
             "Receiver confirmed event {EventId} (on={On})",
             payload.EventId,
             payload.On);
+    }
+
+    private async Task HandleDeviceStatusAsync(
+        string device,
+        string payloadText,
+        CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<DeviceStatusPayload>(payloadText, JsonOptions);
+        if (payload is null)
+        {
+            logger.LogWarning("Ignoring unparseable status for device {Device}", device);
+            return;
+        }
+
+        await deviceStatusStore.SetStatusAsync(
+            device,
+            payload.Online,
+            payload.Version,
+            payload.Ip,
+            cancellationToken);
+
+        logger.LogInformation(
+            "Device {Device} reported {State} (version={Version}, ip={Ip})",
+            device,
+            payload.Online ? "online" : "offline",
+            payload.Version,
+            payload.Ip);
     }
 
     // Devices subscribe to firmware/{device}/latest once at boot. Publishing

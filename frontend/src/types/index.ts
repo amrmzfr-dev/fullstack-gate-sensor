@@ -30,6 +30,14 @@ export interface GateStatus {
   updatedAt: string | null;
 }
 
+export interface DeviceLiveStatus {
+  device: string;
+  online: boolean;
+  lastSeenAt: string | null;
+  firmwareVersion: string | null;
+  ipAddress: string | null;
+}
+
 export interface GateEventRecord {
   id: string;
   event: "on" | "off";

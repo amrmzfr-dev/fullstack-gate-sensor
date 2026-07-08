@@ -1,5 +1,6 @@
 using GateSensor.Api.Data;
 using GateSensor.Api.Models;
+using GateSensor.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,8 +8,18 @@ namespace GateSensor.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class DeviceController(AppDbContext dbContext) : ControllerBase
+public class DeviceController(AppDbContext dbContext, IDeviceStatusStore deviceStatusStore) : ControllerBase
 {
+    // Live liveness of the transmitter/receiver, derived from their retained
+    // MQTT status plus a heartbeat-staleness check (see RedisDeviceStatusStore).
+    [HttpGet("status")]
+    public async Task<ActionResult<IEnumerable<DeviceStatusSnapshot>>> GetStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        var statuses = await deviceStatusStore.GetAllAsync(cancellationToken);
+        return Ok(statuses);
+    }
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Device>>> GetAllAsync(CancellationToken cancellationToken)
     {

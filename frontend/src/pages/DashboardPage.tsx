@@ -7,19 +7,61 @@ import {
   Clock,
   Loader2,
   RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 import { FirmwarePanel } from "@/components/FirmwarePanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
-import type { GateEventRecord } from "@/types";
+import type { DeviceLiveStatus, GateEventRecord } from "@/types";
 
 function formatTimestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "medium",
   }).format(new Date(value));
+}
+
+function formatDeviceName(device: string): string {
+  return device.charAt(0).toUpperCase() + device.slice(1);
+}
+
+function DeviceStatusCard({ device }: { device: DeviceLiveStatus }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          {device.online ? (
+            <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <WifiOff className="size-4 text-muted-foreground" />
+          )}
+          <h3 className="text-sm font-medium">{formatDeviceName(device.device)}</h3>
+          <span
+            className={
+              device.online
+                ? "text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                : "text-xs font-medium text-muted-foreground"
+            }
+          >
+            {device.online ? "Online" : "Offline"}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {device.firmwareVersion ? `v${device.firmwareVersion}` : "Version unknown"}
+          {device.ipAddress ? ` · ${device.ipAddress}` : ""}
+        </p>
+        {device.lastSeenAt && (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="size-3.5" />
+            Last seen: {formatTimestamp(device.lastSeenAt)}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface PipelineStepProps {
@@ -73,7 +115,7 @@ function EventPipeline({ event }: { event: GateEventRecord }) {
 }
 
 export function DashboardPage() {
-  const { status, events, loading, error, refresh } = useGateMonitor();
+  const { status, events, devices, loading, error, refresh } = useGateMonitor();
 
   const alertActive = status?.alertActive ?? false;
 
@@ -152,6 +194,26 @@ export function DashboardPage() {
           {error && (
             <p className="mt-4 text-sm text-destructive">{error}</p>
           )}
+        </section>
+
+        <section className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-6 py-4">
+            <h2 className="text-sm font-medium">Devices</h2>
+            <p className="text-xs text-muted-foreground">
+              Live transmitter and receiver status via MQTT heartbeat
+            </p>
+          </div>
+          <div className="grid gap-3 px-6 py-4 sm:grid-cols-2">
+            {devices.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {loading ? "Loading device status..." : "No devices reporting yet"}
+              </p>
+            ) : (
+              devices.map((device) => (
+                <DeviceStatusCard key={device.device} device={device} />
+              ))
+            )}
+          </div>
         </section>
 
         <section className="rounded-lg border border-border bg-card">

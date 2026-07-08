@@ -14,9 +14,18 @@ constexpr uint8_t kBuzzerPin = 5;
 constexpr uint8_t kConfigResetPin = 0;  // BOOT button — hold at startup to force the WiFi setup portal
 constexpr char kBuzzerTopic[] = "gate/buzzer";
 constexpr char kAckTopic[] = "gate/receiver/ack";
-constexpr char kMqttClientId[] = "gate-receiver";
+// Prefix only — the actual client id gets the chip's MAC appended (see setup)
+// so two units (or an impostor) can't collide on one id and kick each other
+// off the broker ("session taken over").
+constexpr char kMqttClientIdPrefix[] = "gate-receiver-";
+// Liveness: retained online/offline state the backend watches. The broker
+// publishes kStatusOfflinePayload on our behalf (Last Will) if we drop without
+// a clean disconnect; we publish "online" on connect and refresh it on a timer.
+constexpr char kStatusTopic[] = "gate/receiver/status";
+constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
+constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
-constexpr char kFirmwareVersion[] = "1.3.0";
+constexpr char kFirmwareVersion[] = "1.4.0";
 constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
 constexpr unsigned long kBeepOnMs = 1000;    // each beep lasts 1s
 constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cycle
@@ -35,8 +44,36 @@ enum class BuzzerPhase { kOn, kGap, kPause };
 AsyncMqttClient mqttClient;
 bool mqttConnected = false;
 
+// Unique per-device client id, built once from the chip MAC in setup().
+String mqttClientId;
+// Last time we published a liveness heartbeat (main task only).
+unsigned long lastHeartbeatMs = 0;
+
+// Guards the cross-task handoffs below. The MQTT callbacks run on AsyncTCP's
+// own task; the fields they touch are consumed on the main loop() task, so
+// every shared write/read is wrapped in this spinlock.
+portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Set from the MQTT message callback, actually performed from loop(). The
+// callback runs on AsyncTCP's own task with a small stack — running the
+// blocking HTTP download + flash write there overflows it and crash-loops
+// the device on every reconnect (it just keeps re-receiving the retained
+// manifest). Deferring to loop() runs it on the main task's full-size stack.
+// Fixed buffers (not String) so the handoff copies bytes under stateMux
+// instead of sharing a heap-backed String across tasks, where a second
+// manifest could realloc the buffer out from under the reader.
+volatile bool otaPending = false;
+char otaUrl[192] = {0};
+char otaMd5[40] = {0};
+
+// Buzzer "on" ping handed from the MQTT callback to loop(). loop() owns the
+// whole pulsing state machine, so nothing below is ever touched from two tasks.
+volatile bool alertPending = false;
+volatile unsigned long pendingAlertDeadline = 0;
+
 // Pulsing state — kept separate from "is the alert logically active" so the
 // buzzer runs its 3-beeps-then-pause pattern instead of holding one continuous tone.
+// Only ever read/written from loop().
 bool buzzerActive = false;
 bool buzzerPinOn = false;
 BuzzerPhase buzzerPhase = BuzzerPhase::kOn;
@@ -50,17 +87,54 @@ void setBuzzerPin(bool on) {
   Serial.printf("[buzzer] pin=%s beepIndex=%u/%u\n", on ? "ON" : "OFF", beepIndex, kBeepsPerCycle);
 }
 
+// Publishes the retained "online" liveness status (with firmware version and
+// IP). Called on connect and refreshed periodically as a heartbeat, so the
+// backend can tell a live device from one that silently dropped off WiFi.
+void publishStatusOnline() {
+  char payload[96];
+  const int n = snprintf(payload, sizeof(payload),
+                         "{\"online\":true,\"version\":\"%s\",\"ip\":\"%s\"}",
+                         kFirmwareVersion, WiFi.localIP().toString().c_str());
+  if (n > 0) {
+    mqttClient.publish(kStatusTopic, 1, true, payload, static_cast<size_t>(n));
+  }
+  lastHeartbeatMs = millis();
+}
+
 void connectMqtt() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCredentials(MQTT_USERNAME, MQTT_PASSWORD);
-  mqttClient.setClientId(kMqttClientId);
+  mqttClient.setClientId(mqttClientId.c_str());
+  // Last Will: if we drop without a clean disconnect, the broker publishes this
+  // retained "offline" for us so the backend notices within the keepalive window.
+  mqttClient.setWill(kStatusTopic, 1, true, kStatusOfflinePayload);
   mqttClient.connect();
+}
+
+// Compares dotted "a.b.c" versions. Returns true only if candidate is strictly
+// newer than current, so a stale/rolled-back manifest can't downgrade us.
+bool parseSemver(const char* v, int parts[3]) {
+  parts[0] = parts[1] = parts[2] = 0;
+  return sscanf(v, "%d.%d.%d", &parts[0], &parts[1], &parts[2]) == 3;
+}
+
+bool isNewerVersion(const char* candidate, const char* current) {
+  int c[3], r[3];
+  if (!parseSemver(candidate, c) || !parseSemver(current, r)) {
+    return false;
+  }
+  for (int i = 0; i < 3; ++i) {
+    if (c[i] != r[i]) {
+      return c[i] > r[i];
+    }
+  }
+  return false;
 }
 
 // See firmware/transmitter/src/main.cpp's performOta for the same caveat:
 // plain HTTP, no signature check beyond the MD5 integrity hash.
-void performOta(const String& url, const String& expectedMd5) {
-  Serial.printf("OTA: downloading %s\n", url.c_str());
+void performOta(const char* url, const char* expectedMd5) {
+  Serial.printf("OTA: downloading %s\n", url);
 
   HTTPClient http;
   if (!http.begin(url)) {
@@ -88,8 +162,8 @@ void performOta(const String& url, const String& expectedMd5) {
     return;
   }
 
-  if (expectedMd5.length() > 0) {
-    Update.setMD5(expectedMd5.c_str());
+  if (strlen(expectedMd5) > 0) {
+    Update.setMD5(expectedMd5);
   }
 
   const size_t written = Update.writeStream(*http.getStreamPtr());
@@ -110,7 +184,7 @@ void performOta(const String& url, const String& expectedMd5) {
 }
 
 void onFirmwareManifest(char* payload, size_t len) {
-  StaticJsonDocument<256> doc;
+  JsonDocument doc;
   if (deserializeJson(doc, payload, len)) {
     Serial.println("OTA: failed to parse firmware manifest");
     return;
@@ -124,12 +198,24 @@ void onFirmwareManifest(char* payload, size_t len) {
     return;
   }
 
-  if (strcmp(version, kFirmwareVersion) == 0) {
-    return;  // already running this version
+  // Require an integrity hash — without HTTPS/signatures the MD5 is the only
+  // check we have, so refuse rather than flash an unverifiable image.
+  if (strlen(md5) == 0) {
+    Serial.println("OTA: manifest has no md5 — refusing update");
+    return;
+  }
+
+  if (!isNewerVersion(version, kFirmwareVersion)) {
+    Serial.printf("OTA: %s is not newer than %s — ignoring\n", version, kFirmwareVersion);
+    return;
   }
 
   Serial.printf("OTA: new firmware available (%s -> %s)\n", kFirmwareVersion, version);
-  performOta(String(url), String(md5));
+  portENTER_CRITICAL(&stateMux);
+  strlcpy(otaUrl, url, sizeof(otaUrl));
+  strlcpy(otaMd5, md5, sizeof(otaMd5));
+  otaPending = true;
+  portEXIT_CRITICAL(&stateMux);
 }
 
 void onMqttConnect(bool /*sessionPresent*/) {
@@ -137,7 +223,8 @@ void onMqttConnect(bool /*sessionPresent*/) {
   mqttConnected = true;
   mqttClient.subscribe(kBuzzerTopic, 1);
   mqttClient.subscribe(kFirmwareTopic, 1);
-  Serial.printf("Subscribed to %s (QoS 1)\n", kBuzzerTopic);
+  Serial.printf("Subscribed to %s and %s (QoS 1)\n", kBuzzerTopic, kFirmwareTopic);
+  publishStatusOnline();  // announce we're alive (clears any retained "offline")
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -164,7 +251,18 @@ void onMqttMessage(char* topic,
     return;
   }
 
-  StaticJsonDocument<64> doc;
+  // gate/buzzer is published retained by the backend, so on every (re)connect
+  // the broker replays the last retained command. If that command was an "on"
+  // — e.g. the transmitter lost power mid-block and never sent "off" — acting
+  // on it would make the receiver false-alarm for a full window on every
+  // reboot/WiFi flap. Only act on live messages; skip retained replays
+  // entirely (no buzz, and no stale ack referencing an old eventId).
+  if (properties.retain) {
+    Serial.println("Ignoring retained buzzer message on (re)connect");
+    return;
+  }
+
+  JsonDocument doc;
   const DeserializationError error = deserializeJson(doc, payload, len);
   if (error) {
     Serial.printf("Failed to parse buzzer payload: %s\n", error.c_str());
@@ -175,22 +273,18 @@ void onMqttMessage(char* topic,
   const char* eventId = doc["eventId"] | "";
 
   if (buzzerOn) {
-    alertDeadlineMs = millis() + kAlertWindowMs;  // (re)start or extend the rolling window
-    if (!buzzerActive) {
-      // Fresh trigger from idle — start the beep pattern from the top. If
-      // already alerting, leave the in-flight beep/gap/pause cycle alone so
-      // a refresh ping doesn't audibly restart it.
-      buzzerActive = true;
-      beepIndex = 0;
-      buzzerPhase = BuzzerPhase::kOn;
-      lastToggleMs = millis();
-      setBuzzerPin(true);
-    }
+    // Hand the ping over to loop(), which owns the buzzer state machine and
+    // the pin — nothing here touches either, so there's no cross-task race.
+    // "off" is intentionally ignored — see kAlertWindowMs comment above.
+    const unsigned long deadline = millis() + kAlertWindowMs;
+    portENTER_CRITICAL(&stateMux);
+    pendingAlertDeadline = deadline;
+    alertPending = true;
+    portEXIT_CRITICAL(&stateMux);
   }
-  // "off" is intentionally ignored here — see kAlertWindowMs comment above.
   Serial.printf("Buzzer %s (eventId=%s)\n", buzzerOn ? "ON" : "OFF", eventId);
 
-  StaticJsonDocument<96> ackDoc;
+  JsonDocument ackDoc;
   ackDoc["on"] = buzzerOn;
   ackDoc["eventId"] = eventId;
 
@@ -199,11 +293,14 @@ void onMqttMessage(char* topic,
   mqttClient.publish(kAckTopic, 1, false, ackPayload, ackLength);
 }
 
-// See firmware/transmitter/src/main.cpp for why WiFi is configured via
-// WiFiManager's captive portal instead of being compiled in.
+// WiFi comes up in three tiers: (1) a network the client saved through the
+// portal, (2) the built-in default from secrets.h for a brand-new unit, and
+// (3) the WiFiManager captive portal if neither connects. See
+// firmware/transmitter/src/main.cpp for the shared rationale.
 void connectWiFiBlocking() {
   WiFiManager wm;
   wm.setConfigPortalTimeout(180);
+  wm.setConnectTimeout(20);
 
   // Require a deliberate 3s hold before wiping saved WiFi credentials.
   // BOOT also has to be held to put the board into flashing mode, and it can
@@ -218,6 +315,26 @@ void connectWiFiBlocking() {
       Serial.println("BOOT held 3s+ at startup — forcing WiFi setup portal");
       wm.resetSettings();
     }
+  }
+
+  // A fresh (or freshly-reset) unit has no saved network — try the built-in
+  // default so it connects with zero setup. Once the client configures a
+  // network through the portal, WiFiManager saves it and getWiFiIsSaved()
+  // becomes true, so this default block is skipped and their network wins.
+  if (!wm.getWiFiIsSaved()) {
+    Serial.printf("No saved WiFi — trying built-in default \"%s\"\n", WIFI_DEFAULT_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_DEFAULT_SSID, WIFI_DEFAULT_PASS);
+    const unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+      delay(250);
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print("WiFi connected (built-in default), IP: ");
+      Serial.println(WiFi.localIP());
+      return;
+    }
+    Serial.println("Default network unavailable — opening setup portal");
   }
 
   Serial.println("Connecting to WiFi (or starting \"GateSensor-Receiver-Setup\" portal)...");
@@ -266,6 +383,13 @@ void setup() {
   setBuzzerPin(false);
   pinMode(kConfigResetPin, INPUT_PULLUP);
 
+  // Build a unique client id from the chip MAC before any connect can fire
+  // (onWiFiEvent's GOT_IP calls connectMqtt() during connectWiFiBlocking()).
+  char idBuf[40];
+  snprintf(idBuf, sizeof(idBuf), "%s%012llX", kMqttClientIdPrefix, ESP.getEfuseMac());
+  mqttClientId = idBuf;
+  Serial.printf("[boot] mqttClientId=%s\n", mqttClientId.c_str());
+
   mqttClient.onConnect(onMqttConnect);
   mqttClient.onDisconnect(onMqttDisconnect);
   mqttClient.onMessage(onMqttMessage);
@@ -276,7 +400,58 @@ void setup() {
 }
 
 void loop() {
-  if (buzzerActive && millis() >= alertDeadlineMs) {
+  // Copy any pending OTA job out under the lock, then run it on this task.
+  bool doOta = false;
+  char localUrl[192];
+  char localMd5[40];
+  portENTER_CRITICAL(&stateMux);
+  if (otaPending) {
+    otaPending = false;
+    strlcpy(localUrl, otaUrl, sizeof(localUrl));
+    strlcpy(localMd5, otaMd5, sizeof(localMd5));
+    doOta = true;
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (doOta) {
+    performOta(localUrl, localMd5);
+    // Falls through to normal operation if the OTA attempt failed/returned —
+    // ESP.restart() inside performOta() means we never get here on success.
+  }
+
+  // Liveness heartbeat: refresh the retained "online" status so the backend can
+  // distinguish a live device from one whose heartbeats simply stopped.
+  if (mqttConnected && millis() - lastHeartbeatMs >= kHeartbeatMs) {
+    publishStatusOnline();
+  }
+
+  // Consume any buzzer "on" ping handed over from the MQTT callback.
+  bool startAlert = false;
+  unsigned long newDeadline = 0;
+  portENTER_CRITICAL(&stateMux);
+  if (alertPending) {
+    alertPending = false;
+    newDeadline = pendingAlertDeadline;
+    startAlert = true;
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (startAlert) {
+    alertDeadlineMs = newDeadline;  // (re)start or extend the rolling window
+    if (!buzzerActive) {
+      // Fresh trigger from idle — start the beep pattern from the top. If
+      // already alerting, leave the in-flight beep/gap/pause cycle alone so a
+      // refresh ping doesn't audibly restart it.
+      buzzerActive = true;
+      beepIndex = 0;
+      buzzerPhase = BuzzerPhase::kOn;
+      lastToggleMs = millis();
+      setBuzzerPin(true);
+    }
+  }
+
+  // Overflow-safe: the signed difference stays correct across the ~49-day
+  // millis() wrap, where an absolute `millis() >= alertDeadlineMs` compare
+  // would misfire (cutting an active alarm short around the rollover).
+  if (buzzerActive && static_cast<int32_t>(millis() - alertDeadlineMs) >= 0) {
     Serial.println("Safety timeout — no \"off\" received in time, silencing buzzer");
     buzzerActive = false;
     setBuzzerPin(false);
