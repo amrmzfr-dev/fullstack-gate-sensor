@@ -4,6 +4,7 @@ import { HttpError } from "@/lib/api";
 import {
   acknowledgeReceiver,
   fetchDeviceConfig,
+  testReceiverBuzzer,
   updateReceiverConfig,
   updateTransmitterConfig,
 } from "@/lib/config";
@@ -21,6 +22,7 @@ interface UseDeviceConfigResult {
   saveReceiver: (config: ReceiverConfig) => Promise<string | null>;
   saveTransmitter: (config: TransmitterConfig) => Promise<string | null>;
   acknowledge: (cooldownMs?: number) => Promise<void>;
+  testBuzzer: () => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -95,6 +97,10 @@ export function useDeviceConfig(): UseDeviceConfigResult {
     }
   }, []);
 
+  const testBuzzer = useCallback(async () => {
+    await testReceiverBuzzer();
+  }, []);
+
   return {
     config,
     loading,
@@ -104,6 +110,7 @@ export function useDeviceConfig(): UseDeviceConfigResult {
     saveReceiver,
     saveTransmitter,
     acknowledge,
+    testBuzzer,
     refresh,
   };
 }

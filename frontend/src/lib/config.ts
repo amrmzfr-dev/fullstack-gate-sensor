@@ -28,3 +28,10 @@ export async function acknowledgeReceiver(
     { cooldownMs },
   );
 }
+
+export async function testReceiverBuzzer(): Promise<{ tested: boolean }> {
+  return apiPost<{ tested: boolean }, Record<string, never>>(
+    "/device/receiver/test",
+    {},
+  );
+}

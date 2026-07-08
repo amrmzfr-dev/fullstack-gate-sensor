@@ -68,8 +68,26 @@ public class DeviceController(
             retain: true,
             cancellationToken);
 
+        // Preview the just-saved settings on the receiver so the client hears them.
+        await PublishReceiverTestAsync(cancellationToken);
+
         return Ok(config);
     }
+
+    // Plays the current buzzer pattern briefly on the receiver (no config change).
+    [HttpPost("receiver/test")]
+    public async Task<IActionResult> TestReceiverAsync(CancellationToken cancellationToken)
+    {
+        await PublishReceiverTestAsync(cancellationToken);
+        return Ok(new { tested = true });
+    }
+
+    private Task PublishReceiverTestAsync(CancellationToken cancellationToken) =>
+        mqttPublisher.PublishAsync(
+            MqttTopics.ReceiverCommand,
+            JsonSerializer.Serialize(new { action = "test" }, PayloadJson),
+            retain: false,
+            cancellationToken);
 
     [HttpPut("transmitter/config")]
     public async Task<ActionResult<TransmitterConfig>> UpdateTransmitterConfigAsync(

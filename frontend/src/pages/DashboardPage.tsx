@@ -127,6 +127,7 @@ export function DashboardPage() {
     saveReceiver,
     saveTransmitter,
     acknowledge,
+    testBuzzer,
   } = useDeviceConfig();
 
   const [ackMessage, setAckMessage] = useState<string | null>(null);
@@ -263,6 +264,7 @@ export function DashboardPage() {
             saving={saving}
             onSaveReceiver={saveReceiver}
             onSaveTransmitter={saveTransmitter}
+            onTestReceiver={testBuzzer}
           />
         )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Radio, Save, Volume2 } from "lucide-react";
+import { CheckCircle2, Loader2, Play, Radio, Save, Volume2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { DeviceConfig, ReceiverConfig, TransmitterConfig } from "@/types";
@@ -11,6 +11,7 @@ interface DeviceSettingsPanelProps {
   saving: SaveTarget;
   onSaveReceiver: (config: ReceiverConfig) => Promise<string | null>;
   onSaveTransmitter: (config: TransmitterConfig) => Promise<string | null>;
+  onTestReceiver: () => Promise<void>;
 }
 
 type BeepPresetValues = Pick<
@@ -101,13 +102,16 @@ function ReceiverSettings({
   initial,
   saving,
   onSave,
+  onTest,
 }: {
   initial: ReceiverConfig;
   saving: boolean;
   onSave: (config: ReceiverConfig) => Promise<string | null>;
+  onTest: () => Promise<void>;
 }) {
   const [form, setForm] = useState<ReceiverConfig>(initial);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     setForm(initial);
@@ -122,8 +126,21 @@ function ReceiverSettings({
 
   const handleSave = async () => {
     const error = await onSave(form);
-    setMessage(error ? { type: "err", text: error } : { type: "ok", text: "Saved — pushed to receiver" });
+    setMessage(
+      error
+        ? { type: "err", text: error }
+        : { type: "ok", text: "Saved — playing it on the receiver" },
+    );
     window.setTimeout(() => setMessage(null), 4000);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      await onTest();
+    } finally {
+      setTesting(false);
+    }
   };
 
   return (
@@ -212,16 +229,27 @@ function ReceiverSettings({
 
       <div className="flex items-center justify-between gap-3">
         <SaveMessage message={message} />
-        <Button
-          className="ml-auto"
-          disabled={saving}
-          onClick={() => {
-            void handleSave();
-          }}
-        >
-          {saving ? <Loader2 className="animate-spin" /> : <Save />}
-          Save receiver
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button
+            variant="outline"
+            disabled={testing}
+            onClick={() => {
+              void handleTest();
+            }}
+          >
+            {testing ? <Loader2 className="animate-spin" /> : <Play />}
+            Test
+          </Button>
+          <Button
+            disabled={saving}
+            onClick={() => {
+              void handleSave();
+            }}
+          >
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            Save receiver
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -308,6 +336,7 @@ export function DeviceSettingsPanel({
   saving,
   onSaveReceiver,
   onSaveTransmitter,
+  onTestReceiver,
 }: DeviceSettingsPanelProps) {
   return (
     <section className="rounded-lg border border-border bg-card">
@@ -322,6 +351,7 @@ export function DeviceSettingsPanel({
           initial={config.receiver}
           saving={saving === "receiver"}
           onSave={onSaveReceiver}
+          onTest={onTestReceiver}
         />
         <TransmitterSettings
           initial={config.transmitter}

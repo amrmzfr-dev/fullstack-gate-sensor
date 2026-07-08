@@ -25,13 +25,14 @@ constexpr char kStatusTopic[] = "gate/receiver/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
-constexpr char kFirmwareVersion[] = "1.5.0";
+constexpr char kFirmwareVersion[] = "1.6.0";
 constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
 // Retained beep settings the backend pushes, and one-shot commands (e.g. the
-// dashboard's acknowledge/silence button).
+// dashboard's acknowledge/silence button, or a "test" preview after a save).
 constexpr char kConfigTopic[] = "gate/receiver/config";
 constexpr char kCommandTopic[] = "gate/receiver/command";
 constexpr unsigned long kDefaultCooldownMs = 30000;
+constexpr unsigned long kTestDurationMs = 4000;  // how long a "test" plays the pattern
 // Defaults below double as the fallback config for an unconfigured unit.
 constexpr unsigned long kBeepOnMs = 1000;    // each beep lasts 1s
 constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cycle
@@ -96,6 +97,7 @@ volatile bool configPending = false;
 // loop() ignore incoming alerts until the cooldown expires, so the client can
 // quiet a known alert for a configurable few seconds.
 volatile bool cooldownPending = false;
+volatile bool testPending = false;  // play the current pattern briefly (preview after a save)
 volatile unsigned long pendingCooldownMs = 0;
 unsigned long cooldownUntilMs = 0;  // loop-owned; alerts ignored while now < this
 
@@ -275,8 +277,9 @@ void onReceiverConfig(char* payload, size_t len) {
                 c.beepOnMs, c.beepGapMs, c.pauseMs, c.alertWindowMs, c.beepsPerCycle);
 }
 
-// Handles one-shot commands. Today just "silence" (acknowledge), which quiets
-// the buzzer and starts a cooldown during which alerts are ignored.
+// Handles one-shot commands: "silence" (acknowledge) quiets the buzzer and
+// starts a cooldown; "test" briefly plays the current pattern so the client can
+// hear a setting right after saving it.
 void onReceiverCommand(char* payload, size_t len) {
   JsonDocument doc;
   if (deserializeJson(doc, payload, len)) {
@@ -291,6 +294,11 @@ void onReceiverCommand(char* payload, size_t len) {
     cooldownPending = true;
     portEXIT_CRITICAL(&stateMux);
     Serial.printf("command: silence (cooldown=%lu ms)\n", cd);
+  } else if (strcmp(action, "test") == 0) {
+    portENTER_CRITICAL(&stateMux);
+    testPending = true;
+    portEXIT_CRITICAL(&stateMux);
+    Serial.println("command: test buzzer");
   }
 }
 
@@ -539,6 +547,30 @@ void loop() {
     buzzerActive = false;
     setBuzzerPin(false);
     Serial.printf("Acknowledged — silenced, cooling down for %lu ms\n", cooldownMs);
+  }
+
+  // Consume a "test" command: play the current pattern for a few seconds so the
+  // client can preview it. Bypasses cooldown (they explicitly asked to hear it),
+  // and only ever extends an in-flight alert's deadline, never shortens it.
+  portENTER_CRITICAL(&stateMux);
+  const bool startTest = testPending;
+  if (startTest) {
+    testPending = false;
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (startTest) {
+    const unsigned long testDeadline = millis() + kTestDurationMs;
+    if (!buzzerActive) {
+      buzzerActive = true;
+      beepIndex = 0;
+      buzzerPhase = BuzzerPhase::kOn;
+      lastToggleMs = millis();
+      setBuzzerPin(true);
+      alertDeadlineMs = testDeadline;
+      Serial.println("Testing buzzer pattern");
+    } else if (static_cast<int32_t>(testDeadline - alertDeadlineMs) > 0) {
+      alertDeadlineMs = testDeadline;  // already buzzing — just make sure it lasts long enough to hear
+    }
   }
 
   // Consume any buzzer "on" ping handed over from the MQTT callback.
