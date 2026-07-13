@@ -17,9 +17,9 @@ constexpr uint8_t kSimButtonPin = 0;  // BOOT button — simulates the IR sensor
 // open -> stop -> close on successive triggers. GPIO26 is not a strapping pin
 // and stays low through boot, so the relay can't chatter on power-up.
 constexpr uint8_t kRelayPin = 26;
-// Most bare relay modules with an IN pin are ACTIVE-LOW (IN pulled to GND
-// closes the relay). If yours closes on 3.3V instead, flip this to true.
-constexpr bool kRelayActiveHigh = false;
+// This relay board is ACTIVE-HIGH: 3.3V on IN closes the relay, idle LOW
+// keeps the NO circuit open. (Flip to false for the active-low kind.)
+constexpr bool kRelayActiveHigh = true;
 constexpr unsigned long kRelayPulseDefaultMs = 600;
 constexpr char kTriggerTopic[] = "gate/trigger";
 // Prefix only — the chip MAC gets appended (see setup) so two units (or an
@@ -32,7 +32,7 @@ constexpr char kStatusTopic[] = "gate/transmitter/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/transmitter/.
-constexpr char kFirmwareVersion[] = "1.6.0";
+constexpr char kFirmwareVersion[] = "1.6.1";
 constexpr char kFirmwareTopic[] = "firmware/transmitter/latest";
 // Retained runtime settings the backend pushes (re-ping interval, debounce).
 constexpr char kConfigTopic[] = "gate/transmitter/config";
