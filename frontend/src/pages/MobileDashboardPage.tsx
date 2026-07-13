@@ -63,18 +63,17 @@ export function MobileDashboardPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
+            <img src="/favicon.svg" alt="" className="size-7" />
+            <h1 className="text-base font-semibold tracking-tight">Gate Sensor</h1>
             <span
-              className={`inline-block size-2.5 rounded-full ${
-                alertActive
-                  ? "animate-pulse bg-destructive"
-                  : "bg-emerald-500 dark:bg-emerald-400"
+              className={`inline-block size-2 rounded-full ${
+                alertActive ? "animate-pulse bg-destructive" : "bg-primary"
               }`}
               aria-hidden
             />
-            <h1 className="text-base font-semibold tracking-tight">Gate Sensor</h1>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -101,11 +100,11 @@ export function MobileDashboardPage() {
                 {alertActive ? (
                   <AlertTriangle className="size-6 text-destructive" />
                 ) : (
-                  <BellOff className="size-6 text-muted-foreground" />
+                  <BellOff className="size-6 text-primary" />
                 )}
                 <h2
                   className={`text-2xl font-semibold ${
-                    alertActive ? "text-destructive" : ""
+                    alertActive ? "text-destructive" : "text-primary"
                   }`}
                 >
                   {alertActive ? "Gate Alert Active" : "Gate Clear"}
@@ -138,16 +137,18 @@ export function MobileDashboardPage() {
                 onClick={() => {
                   void handleAcknowledge();
                 }}
-                className={`flex size-48 flex-col items-center justify-center gap-1.5 rounded-full border shadow-lg transition-transform active:scale-95 disabled:opacity-60 ${
+                className={`flex size-48 flex-col items-center justify-center gap-1.5 rounded-full border-2 shadow-lg transition-transform active:scale-95 disabled:opacity-60 ${
                   alertActive
                     ? "border-destructive bg-destructive text-white"
-                    : "border-border bg-card text-foreground"
+                    : "border-primary/40 bg-card text-foreground"
                 }`}
               >
                 {acknowledging ? (
                   <Loader2 className="size-12 animate-spin" />
                 ) : (
-                  <VolumeX className="size-12" />
+                  <VolumeX
+                    className={`size-12 ${alertActive ? "" : "text-primary"}`}
+                  />
                 )}
                 <span className="text-lg font-semibold">Silence</span>
                 <span
@@ -185,9 +186,7 @@ export function MobileDashboardPage() {
                   <div className="flex items-center gap-2.5">
                     <span
                       className={`size-2 rounded-full ${
-                        device.online
-                          ? "bg-emerald-500 dark:bg-emerald-400"
-                          : "bg-muted-foreground/40"
+                        device.online ? "bg-primary" : "bg-muted-foreground/40"
                       }`}
                       aria-hidden
                     />
@@ -288,7 +287,7 @@ export function MobileDashboardPage() {
                 onClick={() => setTab(id)}
                 aria-current={active ? "page" : undefined}
                 className={`relative flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-                  active ? "text-foreground" : "text-muted-foreground"
+                  active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 <span className="relative">

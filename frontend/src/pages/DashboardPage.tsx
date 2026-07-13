@@ -51,13 +51,16 @@ export function DashboardPage() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              Gate Sensor Dashboard
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Live alert state via REST — MQTT handled by backend relay
-            </p>
+          <div className="flex items-center gap-3">
+            <img src="/favicon.svg" alt="" className="size-10" />
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">
+                Gate Sensor Dashboard
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Live alert state via REST — MQTT handled by backend relay
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
