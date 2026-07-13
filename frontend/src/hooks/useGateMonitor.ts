@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { HttpError } from "@/lib/api";
 import {
@@ -27,6 +27,10 @@ export function useGateMonitor(
   const [devices, setDevices] = useState<DeviceLiveStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Polls run every ~2s; on phones a single request routinely drops during
+  // brief signal dips. Only surface the error after several consecutive
+  // failures so a one-off blip doesn't flash "unable to reach backend".
+  const consecutiveFailures = useRef(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -38,13 +42,17 @@ export function useGateMonitor(
       setStatus(nextStatus);
       setEvents(nextEvents);
       setDevices(nextDevices);
+      consecutiveFailures.current = 0;
       setError(null);
     } catch (err) {
-      const message =
-        err instanceof HttpError
-          ? `Backend error (${err.status})`
-          : "Unable to reach backend";
-      setError(message);
+      consecutiveFailures.current += 1;
+      if (consecutiveFailures.current >= 3) {
+        setError(
+          err instanceof HttpError
+            ? `Backend error (${err.status})`
+            : "Unable to reach backend",
+        );
+      }
     } finally {
       setLoading(false);
     }
