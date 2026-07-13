@@ -11,7 +11,6 @@ import {
   VolumeX,
 } from "lucide-react";
 
-import { DeviceStatusCard } from "@/components/DeviceStatusCard";
 import { EventPipeline } from "@/components/EventPipeline";
 import {
   ReceiverSettings,
@@ -22,7 +21,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useDeviceConfig } from "@/hooks/useDeviceConfig";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
-import { formatTimestamp } from "@/lib/format";
+import { formatDeviceName, formatTime, formatTimestamp } from "@/lib/format";
 
 type MobileTab = "home" | "events" | "settings" | "firmware";
 
@@ -95,82 +94,118 @@ export function MobileDashboardPage() {
 
       {/* Inactive tabs stay mounted (hidden) so unsaved settings edits survive tab switches. */}
       <main className="flex-1 overflow-y-auto px-4 py-4 pb-24">
-        <div className={tab === "home" ? "space-y-4" : "hidden"}>
-            <section
-              className={`rounded-xl border p-5 ${
-                alertActive
-                  ? "border-destructive/40 bg-destructive/10"
-                  : "border-border bg-card"
-              }`}
-            >
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <div
-                  className={`flex size-20 items-center justify-center rounded-full ${
-                    alertActive
-                      ? "bg-destructive/20 text-destructive"
-                      : "bg-muted text-muted-foreground"
+        <div className={tab === "home" ? "flex min-h-full flex-col gap-4" : "hidden"}>
+          <section className="flex flex-1 flex-col items-center justify-center gap-7 py-6 text-center">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-center gap-2">
+                {alertActive ? (
+                  <AlertTriangle className="size-6 text-destructive" />
+                ) : (
+                  <BellOff className="size-6 text-muted-foreground" />
+                )}
+                <h2
+                  className={`text-2xl font-semibold ${
+                    alertActive ? "text-destructive" : ""
                   }`}
                 >
-                  {alertActive ? (
-                    <AlertTriangle className="size-9" />
-                  ) : (
-                    <BellOff className="size-9" />
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <h2 className="text-2xl font-semibold">
-                    {alertActive ? "Gate Alert Active" : "Gate Clear"}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {loading && !status
-                      ? "Loading current alert state..."
-                      : alertActive
-                        ? "IR beam blocked — buzzer relay engaged"
-                        : "No active alert — sensor beam clear"}
-                  </p>
-                  {status?.updatedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Last update: {formatTimestamp(status.updatedAt)}
-                    </p>
-                  )}
-                </div>
+                  {alertActive ? "Gate Alert Active" : "Gate Clear"}
+                </h2>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {loading && !status
+                  ? "Loading current alert state..."
+                  : alertActive
+                    ? "IR beam blocked — buzzer relay engaged"
+                    : "No active alert — sensor beam clear"}
+              </p>
+              {status?.updatedAt && (
+                <p className="text-xs text-muted-foreground">
+                  Last update: {formatTimestamp(status.updatedAt)}
+                </p>
+              )}
+            </div>
 
-              <Button
-                className="h-14 w-full text-base"
-                variant={alertActive ? "default" : "outline"}
+            <div className="relative">
+              {alertActive && (
+                <span
+                  className="pointer-events-none absolute -inset-3 animate-pulse rounded-full border-4 border-destructive/40"
+                  aria-hidden
+                />
+              )}
+              <button
+                type="button"
                 disabled={acknowledging}
                 onClick={() => {
                   void handleAcknowledge();
                 }}
+                className={`flex size-48 flex-col items-center justify-center gap-1.5 rounded-full border shadow-lg transition-transform active:scale-95 disabled:opacity-60 ${
+                  alertActive
+                    ? "border-destructive bg-destructive text-white"
+                    : "border-border bg-card text-foreground"
+                }`}
               >
                 {acknowledging ? (
-                  <Loader2 className="size-5 animate-spin" />
+                  <Loader2 className="size-12 animate-spin" />
                 ) : (
-                  <VolumeX className="size-5" />
+                  <VolumeX className="size-12" />
                 )}
-                Acknowledge &amp; silence ({cooldownSeconds}s)
-              </Button>
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                {ackMessage ?? "Quiets the buzzer once you're aware of the alert"}
-              </p>
-              {error && (
-                <p className="mt-3 text-center text-sm text-destructive">{error}</p>
-              )}
-            </section>
+                <span className="text-lg font-semibold">Silence</span>
+                <span
+                  className={`text-xs ${
+                    alertActive ? "text-white/80" : "text-muted-foreground"
+                  }`}
+                >
+                  quiet for {cooldownSeconds}s
+                </span>
+              </button>
+            </div>
 
-            <section className="space-y-3">
-              <h2 className="px-1 text-sm font-medium">Devices</h2>
-              {devices.length === 0 ? (
-                <p className="px-1 text-sm text-muted-foreground">
-                  {loading ? "Loading device status..." : "No devices reporting yet"}
-                </p>
-              ) : (
-                devices.map((device) => (
-                  <DeviceStatusCard key={device.device} device={device} />
-                ))
-              )}
-            </section>
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">
+                {ackMessage ??
+                  (alertActive
+                    ? "Tap to acknowledge and quiet the buzzer"
+                    : "Nothing to silence — gate is clear")}
+              </p>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            {devices.length === 0 ? (
+              <p className="px-1 text-sm text-muted-foreground">
+                {loading ? "Loading device status..." : "No devices reporting yet"}
+              </p>
+            ) : (
+              devices.map((device) => (
+                <div
+                  key={device.device}
+                  className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`size-2 rounded-full ${
+                        device.online
+                          ? "bg-emerald-500 dark:bg-emerald-400"
+                          : "bg-muted-foreground/40"
+                      }`}
+                      aria-hidden
+                    />
+                    <span className="text-sm font-medium">
+                      {formatDeviceName(device.device)}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {device.online
+                      ? "Online"
+                      : device.lastSeenAt
+                        ? `Offline · last seen ${formatTime(device.lastSeenAt)}`
+                        : "Offline"}
+                  </span>
+                </div>
+              ))
+            )}
+          </section>
         </div>
 
         <section className={tab === "events" ? "space-y-3" : "hidden"}>
