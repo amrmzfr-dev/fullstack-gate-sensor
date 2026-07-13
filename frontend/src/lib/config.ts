@@ -35,3 +35,12 @@ export async function testReceiverBuzzer(): Promise<{ tested: boolean }> {
     {},
   );
 }
+
+// One stateless "press" of the gate button: the transmitter closes its relay
+// briefly and the gate motor board cycles open -> stop -> close by itself.
+export async function pulseGateRelay(): Promise<{ pulsed: boolean; pulseMs: number }> {
+  return apiPost<{ pulsed: boolean; pulseMs: number }, Record<string, never>>(
+    "/device/transmitter/relay",
+    {},
+  );
+}

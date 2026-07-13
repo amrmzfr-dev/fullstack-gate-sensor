@@ -16,6 +16,9 @@ public static class MqttTopics
     // One-shot command channel for the receiver (e.g. acknowledge/silence).
     public const string ReceiverCommand = "gate/receiver/command";
 
+    // One-shot command channel for the transmitter (gate relay pulse).
+    public const string TransmitterCommand = "gate/transmitter/command";
+
     public static readonly string[] OtaDevices = ["transmitter", "receiver"];
 
     public static string FirmwareLatest(string device) => $"firmware/{device}/latest";

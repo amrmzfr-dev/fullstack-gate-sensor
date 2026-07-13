@@ -12,6 +12,15 @@ namespace {
 
 constexpr uint8_t kIrSensorPin = 4;
 constexpr uint8_t kSimButtonPin = 0;  // BOOT button — simulates the IR sensor when no real sensor is wired
+// Gate-control relay (normally open) wired to the gate motor board's trigger
+// input. One brief closure per command; the motor board itself cycles
+// open -> stop -> close on successive triggers. GPIO26 is not a strapping pin
+// and stays low through boot, so the relay can't chatter on power-up.
+constexpr uint8_t kRelayPin = 26;
+// Most bare relay modules with an IN pin are ACTIVE-LOW (IN pulled to GND
+// closes the relay). If yours closes on 3.3V instead, flip this to true.
+constexpr bool kRelayActiveHigh = false;
+constexpr unsigned long kRelayPulseDefaultMs = 600;
 constexpr char kTriggerTopic[] = "gate/trigger";
 // Prefix only — the chip MAC gets appended (see setup) so two units (or an
 // impostor) can't collide on one client id and kick each other off the broker.
@@ -23,10 +32,12 @@ constexpr char kStatusTopic[] = "gate/transmitter/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/transmitter/.
-constexpr char kFirmwareVersion[] = "1.5.0";
+constexpr char kFirmwareVersion[] = "1.6.0";
 constexpr char kFirmwareTopic[] = "firmware/transmitter/latest";
 // Retained runtime settings the backend pushes (re-ping interval, debounce).
 constexpr char kConfigTopic[] = "gate/transmitter/config";
+// One-shot commands from the backend (gate relay pulse).
+constexpr char kCommandTopic[] = "gate/transmitter/command";
 constexpr unsigned long kPollIntervalMs = 75;
 // Defaults below double as the fallback config for an unconfigured unit.
 constexpr unsigned long kDebounceMs = 50;
@@ -60,6 +71,18 @@ unsigned long debounceMs = kDebounceMs;
 volatile bool configPending = false;
 volatile unsigned long pendingPingIntervalMs = kPingIntervalMs;
 volatile unsigned long pendingDebounceMs = kDebounceMs;
+
+// Gate relay pulse handoff (MQTT callback -> loop) plus the live pulse state.
+// loop() owns the relay pin; the callback only stages a request under stateMux.
+volatile bool relayPulsePending = false;
+volatile unsigned long pendingRelayPulseMs = kRelayPulseDefaultMs;
+bool relayClosed = false;
+unsigned long relayClosedAtMs = 0;
+unsigned long relayPulseMs = kRelayPulseDefaultMs;
+
+void writeRelay(bool closed) {
+  digitalWrite(kRelayPin, closed == kRelayActiveHigh ? HIGH : LOW);
+}
 
 unsigned long clampUL(unsigned long value, unsigned long lo, unsigned long hi) {
   return value < lo ? lo : (value > hi ? hi : value);
@@ -236,6 +259,28 @@ void onTransmitterConfig(char* payload, size_t len) {
   Serial.printf("config: ping=%lu debounce=%lu\n", ping, debounce);
 }
 
+// One-shot commands. "pulse": close the gate relay briefly — the gate motor
+// board cycles open/stop/close on its own with each trigger.
+void onTransmitterCommand(char* payload, size_t len) {
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, len)) {
+    Serial.println("command: parse failed");
+    return;
+  }
+
+  const char* action = doc["action"] | "";
+  if (strcmp(action, "pulse") != 0) {
+    return;
+  }
+
+  const unsigned long pulse = clampUL(doc["pulseMs"] | kRelayPulseDefaultMs, 100, 5000);
+  portENTER_CRITICAL(&stateMux);
+  pendingRelayPulseMs = pulse;
+  relayPulsePending = true;
+  portEXIT_CRITICAL(&stateMux);
+  Serial.printf("command: gate relay pulse %lums\n", pulse);
+}
+
 void onMqttMessage(char* topic,
                     char* payload,
                     AsyncMqttClientMessageProperties /*properties*/,
@@ -246,6 +291,8 @@ void onMqttMessage(char* topic,
     onFirmwareManifest(payload, len);
   } else if (strcmp(topic, kConfigTopic) == 0) {
     onTransmitterConfig(payload, len);
+  } else if (strcmp(topic, kCommandTopic) == 0) {
+    onTransmitterCommand(payload, len);
   }
 }
 
@@ -254,6 +301,7 @@ void onMqttConnect(bool /*sessionPresent*/) {
   mqttConnected = true;
   mqttClient.subscribe(kFirmwareTopic, 1);
   mqttClient.subscribe(kConfigTopic, 1);
+  mqttClient.subscribe(kCommandTopic, 1);
   publishStatusOnline();  // announce we're alive (clears any retained "offline")
 }
 
@@ -398,6 +446,11 @@ void setup() {
   Serial.begin(115200);
   pinMode(kIrSensorPin, INPUT_PULLDOWN);
   pinMode(kSimButtonPin, INPUT_PULLUP);
+  // Drive the relay pin to its open (inactive) level BEFORE switching it to
+  // OUTPUT so the gate can't get a phantom trigger during boot.
+  writeRelay(false);
+  pinMode(kRelayPin, OUTPUT);
+  writeRelay(false);
 
   // Build a unique client id from the chip MAC before any connect can fire
   // (onWiFiEvent's GOT_IP calls connectMqtt() during connectWiFiBlocking()).
@@ -454,6 +507,28 @@ void loop() {
   portEXIT_CRITICAL(&stateMux);
 
   const unsigned long now = millis();
+
+  // Gate relay: start a requested pulse, and release it once the pulse
+  // duration has elapsed. A command that lands mid-pulse restarts the timer
+  // rather than double-triggering.
+  bool startPulse = false;
+  portENTER_CRITICAL(&stateMux);
+  if (relayPulsePending) {
+    relayPulsePending = false;
+    relayPulseMs = pendingRelayPulseMs;
+    startPulse = true;
+  }
+  portEXIT_CRITICAL(&stateMux);
+  if (startPulse) {
+    writeRelay(true);
+    relayClosed = true;
+    relayClosedAtMs = now;
+    Serial.printf("gate relay closed for %lums\n", relayPulseMs);
+  } else if (relayClosed && now - relayClosedAtMs >= relayPulseMs) {
+    writeRelay(false);
+    relayClosed = false;
+    Serial.println("gate relay released");
+  }
 
   switch (state) {
     case TransmitterState::Idle:

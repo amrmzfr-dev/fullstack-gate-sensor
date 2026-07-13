@@ -4,6 +4,7 @@ import {
   Bell,
   BellOff,
   Clock,
+  DoorOpen,
   Loader2,
   RefreshCw,
   VolumeX,
@@ -29,9 +30,22 @@ export function DashboardPage() {
     saveTransmitter,
     acknowledge,
     testBuzzer,
+    pulseGate,
+    pulsingGate,
   } = useDeviceConfig();
 
   const [ackMessage, setAckMessage] = useState<string | null>(null);
+  const [gateMessage, setGateMessage] = useState<string | null>(null);
+
+  const handleGatePress = async () => {
+    try {
+      await pulseGate();
+      setGateMessage("Signal sent to the gate");
+    } catch {
+      setGateMessage("Couldn't reach the gate controller");
+    }
+    window.setTimeout(() => setGateMessage(null), 4000);
+  };
 
   const alertActive = status?.alertActive ?? false;
   const cooldownMs = config?.receiver.acknowledgeCooldownMs ?? 30000;
@@ -136,6 +150,25 @@ export function DashboardPage() {
             <span className="text-xs text-muted-foreground">
               {ackMessage ?? "Lets the client confirm they're aware and quiet the buzzer"}
             </span>
+            <div className="ml-auto flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                {gateMessage ?? "First press opens, next stops, next closes"}
+              </span>
+              <Button
+                variant="outline"
+                disabled={pulsingGate}
+                onClick={() => {
+                  void handleGatePress();
+                }}
+              >
+                {pulsingGate ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <DoorOpen className="text-primary" />
+                )}
+                Gate — open / stop / close
+              </Button>
+            </div>
           </div>
           {error && (
             <p className="mt-4 text-sm text-destructive">{error}</p>

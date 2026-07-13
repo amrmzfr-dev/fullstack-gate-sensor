@@ -118,6 +118,26 @@ public class DeviceController(
         return Ok(config);
     }
 
+    // Pulses the gate-control relay on the transmitter. The gate motor board
+    // cycles open -> stop -> close by itself on successive triggers, so this is
+    // a single stateless "press".
+    [HttpPost("transmitter/relay")]
+    public async Task<IActionResult> PulseGateRelayAsync(
+        [FromBody] RelayPulseRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var pulseMs = request?.PulseMs ?? 600;
+        if (pulseMs is < 100 or > 5000)
+        {
+            return BadRequest("pulseMs must be 100–5000.");
+        }
+
+        var payload = JsonSerializer.Serialize(new { action = "pulse", pulseMs }, PayloadJson);
+        await mqttPublisher.PublishAsync(MqttTopics.TransmitterCommand, payload, retain: false, cancellationToken);
+
+        return Ok(new { pulsed = true, pulseMs });
+    }
+
     // Acknowledge: silence the receiver and start a cooldown. Uses the supplied
     // cooldown, or the receiver's configured default when none is given.
     [HttpPost("receiver/acknowledge")]
@@ -184,4 +204,6 @@ public class DeviceController(
     }
 
     public sealed record AcknowledgeRequest(int? CooldownMs);
+
+    public sealed record RelayPulseRequest(int? PulseMs);
 }

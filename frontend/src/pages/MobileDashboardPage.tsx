@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   AlertTriangle,
   BellOff,
+  DoorOpen,
   HardDriveUpload,
   History,
   Home,
@@ -42,10 +43,23 @@ export function MobileDashboardPage() {
     saveTransmitter,
     acknowledge,
     testBuzzer,
+    pulseGate,
+    pulsingGate,
   } = useDeviceConfig();
 
   const [tab, setTab] = useState<MobileTab>("home");
   const [ackMessage, setAckMessage] = useState<string | null>(null);
+  const [gateMessage, setGateMessage] = useState<string | null>(null);
+
+  const handleGatePress = async () => {
+    try {
+      await pulseGate();
+      setGateMessage("Signal sent to the gate");
+    } catch {
+      setGateMessage("Couldn't reach the gate controller");
+    }
+    window.setTimeout(() => setGateMessage(null), 4000);
+  };
 
   const alertActive = status?.alertActive ?? false;
   const cooldownMs = config?.receiver.acknowledgeCooldownMs ?? 30000;
@@ -170,6 +184,28 @@ export function MobileDashboardPage() {
               </p>
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
+          </section>
+
+          <section className="space-y-2">
+            <Button
+              variant="outline"
+              className="h-14 w-full border-primary/40 text-base"
+              disabled={pulsingGate}
+              onClick={() => {
+                void handleGatePress();
+              }}
+            >
+              {pulsingGate ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : (
+                <DoorOpen className="size-5 text-primary" />
+              )}
+              Gate — open / stop / close
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              {gateMessage ??
+                "One press each: first opens, next stops, next closes"}
+            </p>
           </section>
 
           <section className="space-y-2">

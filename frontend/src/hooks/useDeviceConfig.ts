@@ -4,6 +4,7 @@ import { HttpError } from "@/lib/api";
 import {
   acknowledgeReceiver,
   fetchDeviceConfig,
+  pulseGateRelay,
   testReceiverBuzzer,
   updateReceiverConfig,
   updateTransmitterConfig,
@@ -23,6 +24,8 @@ interface UseDeviceConfigResult {
   saveTransmitter: (config: TransmitterConfig) => Promise<string | null>;
   acknowledge: (cooldownMs?: number) => Promise<void>;
   testBuzzer: () => Promise<void>;
+  pulseGate: () => Promise<void>;
+  pulsingGate: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -39,6 +42,7 @@ export function useDeviceConfig(): UseDeviceConfigResult {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<SaveTarget>(null);
   const [acknowledging, setAcknowledging] = useState(false);
+  const [pulsingGate, setPulsingGate] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -101,6 +105,15 @@ export function useDeviceConfig(): UseDeviceConfigResult {
     await testReceiverBuzzer();
   }, []);
 
+  const pulseGate = useCallback(async () => {
+    setPulsingGate(true);
+    try {
+      await pulseGateRelay();
+    } finally {
+      setPulsingGate(false);
+    }
+  }, []);
+
   return {
     config,
     loading,
@@ -111,6 +124,8 @@ export function useDeviceConfig(): UseDeviceConfigResult {
     saveTransmitter,
     acknowledge,
     testBuzzer,
+    pulseGate,
+    pulsingGate,
     refresh,
   };
 }
