@@ -32,7 +32,7 @@ constexpr char kStatusTopic[] = "gate/transmitter/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/transmitter/.
-constexpr char kFirmwareVersion[] = "1.6.1";
+constexpr char kFirmwareVersion[] = "1.6.2";
 constexpr char kFirmwareTopic[] = "firmware/transmitter/latest";
 // Retained runtime settings the backend pushes (re-ping interval, debounce).
 constexpr char kConfigTopic[] = "gate/transmitter/config";
@@ -50,6 +50,13 @@ constexpr unsigned long kDebounceMs = 50;
 // always lands before the previous one's deadline expires.
 constexpr unsigned long kPingIntervalMs = 5000;
 constexpr unsigned long kWifiResetHoldMs = 3000;
+// Connectivity watchdog: reconnection is normally event-driven (GOT_IP ->
+// connectMqtt, onMqttDisconnect -> connectMqtt), but a connect attempt that
+// fails without firing its callback dead-ends the chain and the device sits
+// powered-but-silent forever. The watchdog kicks a reconnect periodically and,
+// as a last resort, reboots — the remote equivalent of a manual reset.
+constexpr unsigned long kMqttRetryMs = 30000;
+constexpr unsigned long kOfflineRebootMs = 300000;  // 5 min
 
 enum class TransmitterState { Idle, Active };
 
@@ -62,6 +69,9 @@ bool mqttConnected = false;
 String mqttClientId;
 // Last time we published a liveness heartbeat (main task only).
 unsigned long lastHeartbeatMs = 0;
+// Watchdog bookkeeping (main task only).
+unsigned long lastMqttOnlineMs = 0;
+unsigned long lastMqttAttemptMs = 0;
 
 // Runtime settings pushed retained from the backend over gate/transmitter/config
 // and applied live. Defaults match the old compiled-in constants. loop() owns
@@ -495,6 +505,26 @@ void loop() {
   // distinguish a live device from one whose heartbeats simply stopped.
   if (mqttConnected && millis() - lastHeartbeatMs >= kHeartbeatMs) {
     publishStatusOnline();
+  }
+
+  // Connectivity watchdog (see kMqttRetryMs above for why events alone
+  // aren't trusted).
+  {
+    const unsigned long wdNow = millis();
+    if (mqttConnected) {
+      lastMqttOnlineMs = wdNow;
+    } else {
+      if (WiFi.isConnected() && wdNow - lastMqttAttemptMs >= kMqttRetryMs) {
+        lastMqttAttemptMs = wdNow;
+        Serial.println("watchdog: MQTT down — forcing reconnect");
+        connectMqtt();
+      }
+      if (wdNow - lastMqttOnlineMs >= kOfflineRebootMs) {
+        Serial.println("watchdog: offline 5 min — restarting");
+        delay(100);
+        ESP.restart();
+      }
+    }
   }
 
   // Apply any new config handed over from the MQTT callback.

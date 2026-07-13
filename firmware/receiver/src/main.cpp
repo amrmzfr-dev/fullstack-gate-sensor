@@ -25,7 +25,7 @@ constexpr char kStatusTopic[] = "gate/receiver/status";
 constexpr char kStatusOfflinePayload[] = "{\"online\":false}";
 constexpr unsigned long kHeartbeatMs = 30000;
 // Bump this with every release that gets copied into backend/wwwroot/firmware/receiver/.
-constexpr char kFirmwareVersion[] = "1.6.0";
+constexpr char kFirmwareVersion[] = "1.6.1";
 constexpr char kFirmwareTopic[] = "firmware/receiver/latest";
 // Retained beep settings the backend pushes, and one-shot commands (e.g. the
 // dashboard's acknowledge/silence button, or a "test" preview after a save).
@@ -39,6 +39,13 @@ constexpr unsigned long kBeepGapMs = 1000;   // 1s gap between beeps within a cy
 constexpr unsigned long kPauseMs = 2000;     // 2s pause after a cycle before looping
 constexpr uint8_t kBeepsPerCycle = 5;
 constexpr unsigned long kWifiResetHoldMs = 3000;
+// Connectivity watchdog: reconnection is normally event-driven (GOT_IP ->
+// connectMqtt, onMqttDisconnect -> connectMqtt), but a connect attempt that
+// fails without firing its callback dead-ends the chain and the device sits
+// powered-but-silent forever. The watchdog kicks a reconnect periodically and,
+// as a last resort, reboots — the remote equivalent of a manual reset.
+constexpr unsigned long kMqttRetryMs = 30000;
+constexpr unsigned long kOfflineRebootMs = 300000;  // 5 min
 // Every "on" ping guarantees at least this long of alerting, however brief
 // the trigger was — "off" is intentionally ignored for buzzer control (the
 // transmitter only sends it for the dashboard log). While the sensor stays
@@ -55,6 +62,9 @@ bool mqttConnected = false;
 String mqttClientId;
 // Last time we published a liveness heartbeat (main task only).
 unsigned long lastHeartbeatMs = 0;
+// Watchdog bookkeeping (main task only).
+unsigned long lastMqttOnlineMs = 0;
+unsigned long lastMqttAttemptMs = 0;
 
 // Guards the cross-task handoffs below. The MQTT callbacks run on AsyncTCP's
 // own task; the fields they touch are consumed on the main loop() task, so
@@ -518,6 +528,26 @@ void loop() {
   // distinguish a live device from one whose heartbeats simply stopped.
   if (mqttConnected && millis() - lastHeartbeatMs >= kHeartbeatMs) {
     publishStatusOnline();
+  }
+
+  // Connectivity watchdog (see kMqttRetryMs above for why events alone
+  // aren't trusted).
+  {
+    const unsigned long wdNow = millis();
+    if (mqttConnected) {
+      lastMqttOnlineMs = wdNow;
+    } else {
+      if (WiFi.isConnected() && wdNow - lastMqttAttemptMs >= kMqttRetryMs) {
+        lastMqttAttemptMs = wdNow;
+        Serial.println("watchdog: MQTT down — forcing reconnect");
+        connectMqtt();
+      }
+      if (wdNow - lastMqttOnlineMs >= kOfflineRebootMs) {
+        Serial.println("watchdog: offline 5 min — restarting");
+        delay(100);
+        ESP.restart();
+      }
+    }
   }
 
   // Apply any new beep config handed over from the MQTT callback.
