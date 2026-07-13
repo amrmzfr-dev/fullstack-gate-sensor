@@ -98,7 +98,7 @@ function SaveMessage({ message }: SaveMessageProps) {
   );
 }
 
-function ReceiverSettings({
+export function ReceiverSettings({
   initial,
   saving,
   onSave,
@@ -255,7 +255,7 @@ function ReceiverSettings({
   );
 }
 
-function TransmitterSettings({
+export function TransmitterSettings({
   initial,
   saving,
   onSave,

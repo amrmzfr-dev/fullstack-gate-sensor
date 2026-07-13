@@ -1,122 +1,23 @@
 import { useState } from "react";
 import {
   AlertTriangle,
-  ArrowRight,
   Bell,
   BellOff,
-  CheckCircle2,
   Clock,
   Loader2,
   RefreshCw,
   VolumeX,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 
 import { DeviceSettingsPanel } from "@/components/DeviceSettingsPanel";
+import { DeviceStatusCard } from "@/components/DeviceStatusCard";
+import { EventPipeline } from "@/components/EventPipeline";
 import { FirmwarePanel } from "@/components/FirmwarePanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useDeviceConfig } from "@/hooks/useDeviceConfig";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
-import type { DeviceLiveStatus, GateEventRecord } from "@/types";
-
-function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
-
-function formatDeviceName(device: string): string {
-  return device.charAt(0).toUpperCase() + device.slice(1);
-}
-
-function DeviceStatusCard({ device }: { device: DeviceLiveStatus }) {
-  return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          {device.online ? (
-            <Wifi className="size-4 text-emerald-600 dark:text-emerald-400" />
-          ) : (
-            <WifiOff className="size-4 text-muted-foreground" />
-          )}
-          <h3 className="text-sm font-medium">{formatDeviceName(device.device)}</h3>
-          <span
-            className={
-              device.online
-                ? "text-xs font-medium text-emerald-600 dark:text-emerald-400"
-                : "text-xs font-medium text-muted-foreground"
-            }
-          >
-            {device.online ? "Online" : "Offline"}
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {device.firmwareVersion ? `v${device.firmwareVersion}` : "Version unknown"}
-          {device.ipAddress ? ` · ${device.ipAddress}` : ""}
-        </p>
-        {device.lastSeenAt && (
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="size-3.5" />
-            Last seen: {formatTimestamp(device.lastSeenAt)}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface PipelineStepProps {
-  label: string;
-  done: boolean;
-  timestamp: string | null;
-}
-
-function PipelineStep({ label, done, timestamp }: PipelineStepProps) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {done ? (
-        <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-      ) : (
-        <Loader2 className="size-3.5 animate-spin text-amber-500" />
-      )}
-      <span className={done ? "text-foreground" : "text-muted-foreground"}>
-        {label}
-      </span>
-      {timestamp && (
-        <span className="text-muted-foreground">
-          ({formatTimestamp(timestamp)})
-        </span>
-      )}
-    </div>
-  );
-}
-
-function EventPipeline({ event }: { event: GateEventRecord }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <PipelineStep
-        label="Sensor triggered"
-        done
-        timestamp={event.timestamp}
-      />
-      <ArrowRight className="size-3 text-muted-foreground" />
-      <PipelineStep
-        label="Relayed to buzzer"
-        done={event.relayedAt !== null}
-        timestamp={event.relayedAt}
-      />
-      <ArrowRight className="size-3 text-muted-foreground" />
-      <PipelineStep
-        label="Receiver confirmed"
-        done={event.receiverConfirmedAt !== null}
-        timestamp={event.receiverConfirmedAt}
-      />
-    </div>
-  );
-}
+import { formatTimestamp } from "@/lib/format";
 
 export function DashboardPage() {
   const { status, events, devices, loading, error, refresh } = useGateMonitor();

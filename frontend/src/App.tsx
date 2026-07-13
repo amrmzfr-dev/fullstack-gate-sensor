@@ -1,5 +1,9 @@
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { MobileDashboardPage } from "@/pages/MobileDashboardPage";
 
 export function App() {
-  return <DashboardPage />;
+  const isMobile = useIsMobile();
+
+  return isMobile ? <MobileDashboardPage /> : <DashboardPage />;
 }
