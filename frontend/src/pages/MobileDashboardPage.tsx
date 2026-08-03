@@ -7,6 +7,7 @@ import {
   History,
   Home,
   Loader2,
+  LogOut,
   RefreshCw,
   Settings,
   VolumeX,
@@ -33,7 +34,11 @@ const TABS: ReadonlyArray<{ id: MobileTab; label: string; icon: typeof Home }> =
   { id: "firmware", label: "Firmware", icon: HardDriveUpload },
 ];
 
-export function MobileDashboardPage() {
+interface MobileDashboardPageProps {
+  onLogout: () => void;
+}
+
+export function MobileDashboardPage({ onLogout }: MobileDashboardPageProps) {
   const { status, events, devices, loading, error, refresh } = useGateMonitor();
   const {
     config,
@@ -305,6 +310,18 @@ export function MobileDashboardPage() {
                 Loading device settings...
               </p>
             )}
+
+            <div className="space-y-2 border-t border-border pt-4">
+              <h2 className="px-1 text-sm font-medium">Account</h2>
+              <Button
+                variant="outline"
+                className="h-11 w-full justify-center text-destructive"
+                onClick={onLogout}
+              >
+                <LogOut />
+                Sign out
+              </Button>
+            </div>
         </section>
 
         <div className={tab === "firmware" ? "" : "hidden"}>

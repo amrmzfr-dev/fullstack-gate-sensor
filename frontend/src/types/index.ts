@@ -77,3 +77,8 @@ export interface DeviceFirmwareStatus {
   device: FirmwareDevice;
   manifest: FirmwareManifest | null;
 }
+
+export interface LoginResponse {
+  token: string;
+  username: string;
+}

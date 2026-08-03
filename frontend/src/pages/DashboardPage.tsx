@@ -6,6 +6,7 @@ import {
   Clock,
   DoorOpen,
   Loader2,
+  LogOut,
   RefreshCw,
   VolumeX,
 } from "lucide-react";
@@ -20,7 +21,11 @@ import { useDeviceConfig } from "@/hooks/useDeviceConfig";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
 import { formatTimestamp } from "@/lib/format";
 
-export function DashboardPage() {
+interface DashboardPageProps {
+  onLogout: () => void;
+}
+
+export function DashboardPage({ onLogout }: DashboardPageProps) {
   const { status, events, devices, loading, error, refresh } = useGateMonitor();
   const {
     config,
@@ -88,6 +93,14 @@ export function DashboardPage() {
               <RefreshCw />
             </Button>
             <ThemeToggle />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onLogout}
+              aria-label="Sign out"
+            >
+              <LogOut />
+            </Button>
           </div>
         </div>
       </header>

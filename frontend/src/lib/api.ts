@@ -1,3 +1,4 @@
+import { clearSession, getToken } from "@/lib/auth";
 import type { ApiError } from "@/types";
 
 const API_BASE_URL =
@@ -13,8 +14,17 @@ export class HttpError extends Error implements ApiError {
   }
 }
 
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
+    if (response.status === 401) {
+      clearSession();
+    }
+
     const message = await response.text();
     throw new HttpError(message || response.statusText, response.status);
   }
@@ -29,7 +39,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "GET",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...authHeaders() },
   });
 
   return parseResponse<T>(response);
@@ -44,6 +54,7 @@ export async function apiPost<T, B = unknown>(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -60,6 +71,7 @@ export async function apiPut<T, B = unknown>(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -73,7 +85,7 @@ export async function apiPostForm<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...authHeaders() },
     body: formData,
   });
 
@@ -83,7 +95,7 @@ export async function apiPostForm<T>(
 export async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "DELETE",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...authHeaders() },
   });
 
   await parseResponse<void>(response);
