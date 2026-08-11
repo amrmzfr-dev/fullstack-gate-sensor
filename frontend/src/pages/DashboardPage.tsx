@@ -4,6 +4,7 @@ import {
   Bell,
   BellOff,
   Clock,
+  DoorOpen,
   Loader2,
   LogOut,
   RefreshCw,
@@ -13,7 +14,6 @@ import {
 import { DeviceSettingsPanel } from "@/components/DeviceSettingsPanel";
 import { DeviceStatusCard } from "@/components/DeviceStatusCard";
 import { FirmwarePanel } from "@/components/FirmwarePanel";
-import { GateSlideControl } from "@/components/GateSlideControl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useDeviceConfig } from "@/hooks/useDeviceConfig";
@@ -167,11 +167,20 @@ export function DashboardPage({ username, onLogout }: DashboardPageProps) {
               <span className="text-xs text-muted-foreground">
                 {gateMessage ?? "First press opens, next stops, next closes"}
               </span>
-              <GateSlideControl
-                pulsing={pulsingGate}
-                onPress={handleGatePress}
-                className="w-64"
-              />
+              <Button
+                variant="outline"
+                disabled={pulsingGate}
+                onClick={() => {
+                  void handleGatePress();
+                }}
+              >
+                {pulsingGate ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <DoorOpen className="text-primary" />
+                )}
+                Gate — open / stop / close
+              </Button>
             </div>
           </div>
           {error && (
