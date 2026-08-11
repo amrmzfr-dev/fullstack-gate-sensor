@@ -40,4 +40,22 @@ public class GateController(
 
         return Ok(events);
     }
+
+    // Who pressed the gate open/stop/close button, grouped into one row per
+    // user per 5-minute burst of presses (see DeviceController.RecordControlEventAsync).
+    [HttpGet("control-events")]
+    public async Task<ActionResult<IEnumerable<GateControlEvent>>> GetControlEventsAsync(
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var boundedLimit = Math.Clamp(limit, 1, 200);
+
+        var events = await dbContext.GateControlEvents
+            .AsNoTracking()
+            .OrderByDescending(e => e.LastPressedAt)
+            .Take(boundedLimit)
+            .ToListAsync(cancellationToken);
+
+        return Ok(events);
+    }
 }

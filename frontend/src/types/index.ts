@@ -57,12 +57,12 @@ export interface DeviceConfig {
   transmitter: TransmitterConfig;
 }
 
-export interface GateEventRecord {
+export interface GateControlEventRecord {
   id: string;
-  event: "on" | "off";
-  timestamp: string;
-  relayedAt: string | null;
-  receiverConfirmedAt: string | null;
+  username: string;
+  firstPressedAt: string;
+  lastPressedAt: string;
+  pressCount: number;
 }
 
 export type FirmwareDevice = "transmitter" | "receiver";

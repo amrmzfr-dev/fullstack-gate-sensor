@@ -12,20 +12,20 @@ import {
 
 import { DeviceSettingsPanel } from "@/components/DeviceSettingsPanel";
 import { DeviceStatusCard } from "@/components/DeviceStatusCard";
-import { EventPipeline } from "@/components/EventPipeline";
 import { FirmwarePanel } from "@/components/FirmwarePanel";
 import { GateSlideControl } from "@/components/GateSlideControl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useDeviceConfig } from "@/hooks/useDeviceConfig";
 import { useGateMonitor } from "@/hooks/useGateMonitor";
-import { formatTimestamp } from "@/lib/format";
+import { capitalize, formatTimestamp } from "@/lib/format";
 
 interface DashboardPageProps {
+  username: string | null;
   onLogout: () => void;
 }
 
-export function DashboardPage({ onLogout }: DashboardPageProps) {
+export function DashboardPage({ username, onLogout }: DashboardPageProps) {
   const { status, events, devices, loading, error, refresh } = useGateMonitor();
   const {
     config,
@@ -213,39 +213,34 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           <div className="border-b border-border px-6 py-4">
             <h2 className="text-sm font-medium">Recent Events</h2>
             <p className="text-xs text-muted-foreground">
-              Trigger history from Postgres via REST
+              Who pressed the gate control button
             </p>
           </div>
           {events.length === 0 ? (
             <p className="px-6 py-8 text-sm text-muted-foreground">
-              {loading ? "Loading events..." : "No trigger events recorded yet"}
+              {loading ? "Loading events..." : "No gate presses recorded yet"}
             </p>
           ) : (
             <ul className="max-h-80 divide-y divide-border overflow-y-auto">
               {events.map((event) => (
-                <li key={event.id} className="space-y-1.5 px-6 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={
-                        event.event === "on"
-                          ? "font-medium text-destructive"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {event.event === "on" ? "Trigger ON" : "Trigger OFF"}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatTimestamp(event.timestamp)}
-                    </span>
-                  </div>
-                  <EventPipeline event={event} />
+                <li
+                  key={event.id}
+                  className="flex items-center justify-between px-6 py-3 text-sm"
+                >
+                  <span>
+                    <span className="font-medium">{capitalize(event.username)}</span>{" "}
+                    <span className="text-muted-foreground">Open/Closed the gate</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatTimestamp(event.lastPressedAt)}
+                  </span>
                 </li>
               ))}
             </ul>
           )}
         </section>
 
-        <FirmwarePanel />
+        <FirmwarePanel username={username} />
       </main>
     </div>
   );

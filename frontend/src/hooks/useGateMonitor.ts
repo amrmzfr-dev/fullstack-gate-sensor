@@ -3,16 +3,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpError } from "@/lib/api";
 import {
   fetchDeviceStatuses,
-  fetchGateEvents,
+  fetchGateControlEvents,
   fetchGateStatus,
 } from "@/lib/gate";
-import type { DeviceLiveStatus, GateEventRecord, GateStatus } from "@/types";
+import type { DeviceLiveStatus, GateControlEventRecord, GateStatus } from "@/types";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 
 interface UseGateMonitorResult {
   status: GateStatus | null;
-  events: GateEventRecord[];
+  events: GateControlEventRecord[];
   devices: DeviceLiveStatus[];
   loading: boolean;
   error: string | null;
@@ -23,7 +23,7 @@ export function useGateMonitor(
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 ): UseGateMonitorResult {
   const [status, setStatus] = useState<GateStatus | null>(null);
-  const [events, setEvents] = useState<GateEventRecord[]>([]);
+  const [events, setEvents] = useState<GateControlEventRecord[]>([]);
   const [devices, setDevices] = useState<DeviceLiveStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,7 @@ export function useGateMonitor(
     try {
       const [nextStatus, nextEvents, nextDevices] = await Promise.all([
         fetchGateStatus(),
-        fetchGateEvents(),
+        fetchGateControlEvents(),
         fetchDeviceStatuses(),
       ]);
       setStatus(nextStatus);

@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using GateSensor.Api.Data;
 using GateSensor.Api.Models;
@@ -19,6 +20,10 @@ public class DeviceController(
     // The re-ping interval must land before the receiver's alert window lapses,
     // or the buzzer gaps between pings. Keep this margin between them.
     private const int PingWindowMarginMs = 500;
+
+    // Repeated presses by the same user within this window collapse into one
+    // recent-events row instead of one row per press.
+    private static readonly TimeSpan ControlEventGroupingWindow = TimeSpan.FromMinutes(5);
 
     private static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerDefaults.Web);
 
@@ -134,8 +139,44 @@ public class DeviceController(
 
         var payload = JsonSerializer.Serialize(new { action = "pulse", pulseMs }, PayloadJson);
         await mqttPublisher.PublishAsync(MqttTopics.TransmitterCommand, payload, retain: false, cancellationToken);
+        await RecordControlEventAsync(cancellationToken);
 
         return Ok(new { pulsed = true, pulseMs });
+    }
+
+    private async Task RecordControlEventAsync(CancellationToken cancellationToken)
+    {
+        var username = User.FindFirst(JwtRegisteredClaimNames.UniqueName)?.Value;
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var windowStart = now - ControlEventGroupingWindow;
+
+        var current = await dbContext.GateControlEvents
+            .Where(e => e.Username == username && e.LastPressedAt >= windowStart)
+            .OrderByDescending(e => e.LastPressedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (current is not null)
+        {
+            current.LastPressedAt = now;
+            current.PressCount += 1;
+        }
+        else
+        {
+            dbContext.GateControlEvents.Add(new GateControlEvent
+            {
+                Username = username,
+                FirstPressedAt = now,
+                LastPressedAt = now,
+                PressCount = 1,
+            });
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     // Acknowledge: silence the receiver and start a cooldown. Uses the supplied

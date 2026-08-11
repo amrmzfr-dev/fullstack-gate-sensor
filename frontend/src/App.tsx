@@ -7,7 +7,7 @@ import { MobileDashboardPage } from "@/pages/MobileDashboardPage";
 
 export function App() {
   const isMobile = useIsMobile();
-  const { isAuthenticated, login, logout } = useAuth();
+  const { isAuthenticated, username, login, logout } = useAuth();
 
   // Applies the `dark` class to <html> — needed here (not just inside
   // ThemeToggle) so the login page also respects the saved/system theme.
@@ -18,8 +18,8 @@ export function App() {
   }
 
   return isMobile ? (
-    <MobileDashboardPage onLogout={logout} />
+    <MobileDashboardPage username={username} onLogout={logout} />
   ) : (
-    <DashboardPage onLogout={logout} />
+    <DashboardPage username={username} onLogout={logout} />
   );
 }

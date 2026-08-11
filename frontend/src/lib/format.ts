@@ -11,6 +11,10 @@ export function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
+export function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export function formatDeviceName(device: string): string {
-  return device.charAt(0).toUpperCase() + device.slice(1);
+  return capitalize(device);
 }

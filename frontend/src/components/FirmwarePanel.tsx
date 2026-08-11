@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, Loader2, Upload } from "lucide-react";
+import { CheckCircle2, Loader2, ShieldAlert, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,8 +88,17 @@ function DeviceUploadCard({ status, uploading, onUpload }: DeviceUploadCardProps
   );
 }
 
-export function FirmwarePanel() {
+// Firmware OTA is the one action that can brick a device — restricted to
+// the system admin account. Everyone else sees a warning, not the panel.
+const ADMIN_USERNAME = "amir";
+
+interface FirmwarePanelProps {
+  username: string | null;
+}
+
+export function FirmwarePanel({ username }: FirmwarePanelProps) {
   const { statuses, loading, error, uploadingDevice, upload } = useFirmware();
+  const isAdmin = username?.toLowerCase() === ADMIN_USERNAME;
 
   return (
     <section className="rounded-lg border border-border bg-card">
@@ -99,21 +108,28 @@ export function FirmwarePanel() {
           Upload a .bin to OTA-update a device automatically over MQTT
         </p>
       </div>
-      <div className="space-y-3 px-6 py-4">
-        {loading && statuses.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading firmware status...</p>
-        ) : (
-          statuses.map((status) => (
-            <DeviceUploadCard
-              key={status.device}
-              status={status}
-              uploading={uploadingDevice === status.device}
-              onUpload={upload}
-            />
-          ))
-        )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
+      {isAdmin ? (
+        <div className="space-y-3 px-6 py-4">
+          {loading && statuses.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Loading firmware status...</p>
+          ) : (
+            statuses.map((status) => (
+              <DeviceUploadCard
+                key={status.device}
+                status={status}
+                uploading={uploadingDevice === status.device}
+                onUpload={upload}
+              />
+            ))
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      ) : (
+        <div className="flex items-start gap-2.5 px-6 py-6 text-sm text-muted-foreground">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+          <p>Firmware updates are locked to the system admin account.</p>
+        </div>
+      )}
     </section>
   );
 }

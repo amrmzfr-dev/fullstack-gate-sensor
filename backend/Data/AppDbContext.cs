@@ -9,6 +9,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Sensor> Sensors => Set<Sensor>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<GateEvent> GateEvents => Set<GateEvent>();
+    public DbSet<GateControlEvent> GateControlEvents => Set<GateControlEvent>();
     public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -43,6 +44,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Event).IsRequired().HasMaxLength(8);
             entity.HasIndex(e => e.Timestamp);
+        });
+
+        modelBuilder.Entity<GateControlEvent>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Username).IsRequired().HasMaxLength(64);
+            entity.HasIndex(e => new { e.Username, e.LastPressedAt });
         });
 
         modelBuilder.Entity<User>(entity =>

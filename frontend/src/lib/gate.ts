@@ -1,5 +1,5 @@
 import { apiGet } from "@/lib/api";
-import type { DeviceLiveStatus, GateEventRecord, GateStatus } from "@/types";
+import type { DeviceLiveStatus, GateControlEventRecord, GateStatus } from "@/types";
 
 export async function fetchGateStatus(): Promise<GateStatus> {
   const response = await apiGet<{
@@ -33,24 +33,10 @@ export async function fetchDeviceStatuses(): Promise<DeviceLiveStatus[]> {
   }));
 }
 
-export async function fetchGateEvents(
+// Who pressed the gate open/stop/close button, grouped into one entry per
+// user per 5-minute burst of presses (grouping happens backend-side).
+export async function fetchGateControlEvents(
   limit = 50,
-): Promise<GateEventRecord[]> {
-  const response = await apiGet<
-    Array<{
-      id: string;
-      event: string;
-      timestamp: string;
-      relayedAt: string | null;
-      receiverConfirmedAt: string | null;
-    }>
-  >(`/gate/events?limit=${limit}`);
-
-  return response.map((record) => ({
-    id: record.id,
-    event: record.event === "on" ? "on" : "off",
-    timestamp: record.timestamp,
-    relayedAt: record.relayedAt,
-    receiverConfirmedAt: record.receiverConfirmedAt,
-  }));
+): Promise<GateControlEventRecord[]> {
+  return apiGet<GateControlEventRecord[]>(`/gate/control-events?limit=${limit}`);
 }
