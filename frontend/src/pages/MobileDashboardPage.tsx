@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   AlertTriangle,
   BellOff,
-  DoorOpen,
   HardDriveUpload,
   History,
   Home,
@@ -19,6 +18,7 @@ import {
   TransmitterSettings,
 } from "@/components/DeviceSettingsPanel";
 import { FirmwarePanel } from "@/components/FirmwarePanel";
+import { GateSlideControl } from "@/components/GateSlideControl";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useDeviceConfig } from "@/hooks/useDeviceConfig";
@@ -192,21 +192,12 @@ export function MobileDashboardPage({ onLogout }: MobileDashboardPageProps) {
           </section>
 
           <section className="space-y-2">
-            <Button
-              variant="outline"
-              className="h-14 w-full border-primary/40 text-base"
-              disabled={pulsingGate}
-              onClick={() => {
-                void handleGatePress();
-              }}
-            >
-              {pulsingGate ? (
-                <Loader2 className="size-5 animate-spin" />
-              ) : (
-                <DoorOpen className="size-5 text-primary" />
-              )}
-              Gate — open / stop / close
-            </Button>
+            <GateSlideControl
+              pulsing={pulsingGate}
+              onPress={handleGatePress}
+              size="lg"
+              className="w-full"
+            />
             <p className="text-center text-xs text-muted-foreground">
               {gateMessage ??
                 "One press each: first opens, next stops, next closes"}
