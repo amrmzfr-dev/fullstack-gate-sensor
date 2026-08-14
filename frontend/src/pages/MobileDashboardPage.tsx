@@ -65,8 +65,15 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
   const [tab, setTab] = useState<MobileTab>("home");
   const [ackMessage, setAckMessage] = useState<string | null>(null);
   const [gateMessage, setGateMessage] = useState<string | null>(null);
+  // The actual API call often resolves in a few ms, which makes "Signal sent"
+  // flash too fast to read. Hold the sent state visible for a minimum stretch
+  // regardless of how quickly the request completes.
+  const [signalSentFlash, setSignalSentFlash] = useState(false);
+  const SIGNAL_SENT_DISPLAY_MS = 1500;
 
   const handleGatePress = async () => {
+    setSignalSentFlash(true);
+    window.setTimeout(() => setSignalSentFlash(false), SIGNAL_SENT_DISPLAY_MS);
     try {
       await pulseGate();
       setGateMessage("Signal sent to the gate");
@@ -75,6 +82,8 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
     }
     window.setTimeout(() => setGateMessage(null), 4000);
   };
+
+  const sendingSignal = pulsingGate || signalSentFlash;
 
   const alertActive = status?.alertActive ?? false;
   const cooldownMs = config?.receiver.acknowledgeCooldownMs ?? 30000;
@@ -145,7 +154,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
             className={`flex items-center justify-between gap-3 rounded-3xl px-5 py-4 transition-colors ${
               alertActive
                 ? "bg-destructive text-white"
-                : pulsingGate
+                : sendingSignal
                   ? "bg-tone-control text-tone-control-foreground"
                   : "border border-border bg-card"
             }`}
@@ -153,7 +162,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
             <div className="flex min-w-0 flex-col gap-1">
               <span
                 className={`font-label text-[10px] uppercase tracking-widest ${
-                  alertActive || pulsingGate ? "opacity-70" : "text-muted-foreground"
+                  alertActive || sendingSignal ? "opacity-70" : "text-muted-foreground"
                 }`}
               >
                 Controller
@@ -163,13 +172,13 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
                   ? "Loading…"
                   : alertActive
                     ? "Beam blocked"
-                    : pulsingGate
+                    : sendingSignal
                       ? "Signal sent"
                       : "Connected"}
               </span>
               <span
                 className={`text-xs ${
-                  alertActive || pulsingGate ? "opacity-80" : "text-muted-foreground"
+                  alertActive || sendingSignal ? "opacity-80" : "text-muted-foreground"
                 }`}
               >
                 {alertActive
@@ -180,7 +189,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
             {status?.updatedAt && (
               <span
                 className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 font-label text-[9px] uppercase tracking-widest ${
-                  alertActive || pulsingGate ? "bg-black/15" : "bg-muted text-muted-foreground"
+                  alertActive || sendingSignal ? "bg-black/15" : "bg-muted text-muted-foreground"
                 }`}
               >
                 {formatTime(status.updatedAt)}
@@ -232,7 +241,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
           </section>
 
           <section className="flex flex-col items-center gap-2 py-1">
-            <GatePressButton pulsing={pulsingGate} onPress={handleGatePress} />
+            <GatePressButton pulsing={sendingSignal} onPress={handleGatePress} />
             <p className="text-xs text-muted-foreground">{gateMessage}</p>
           </section>
 
