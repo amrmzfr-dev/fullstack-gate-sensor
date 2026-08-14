@@ -75,6 +75,18 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
     startX.current = e.clientX;
     setDragging(true);
 
+    // touch-action:none and preventDefault() on the pointer events are not
+    // reliably enough on their own to stop mobile Safari/Chrome from also
+    // starting a native page-pan gesture for the same finger movement —
+    // this directly blocks the underlying touchmove for the duration of the
+    // drag, which is the part that actually pans the viewport. Must be a
+    // real (non-React) listener registered as non-passive, since passive
+    // touchmove listeners can't call preventDefault() at all.
+    const blockTouchScroll = (ev: TouchEvent) => {
+      ev.preventDefault();
+    };
+    document.addEventListener("touchmove", blockTouchScroll, { passive: false, capture: true });
+
     const move = (ev: PointerEvent) => {
       ev.preventDefault();
       setDragX(Math.max(0, Math.min(COVER_TRAVEL, ev.clientX - startX.current)));
@@ -82,6 +94,7 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", up, true);
+      document.removeEventListener("touchmove", blockTouchScroll, true);
       setDragging(false);
       const traveled = Math.max(0, Math.min(COVER_TRAVEL, ev.clientX - startX.current));
       const open = traveled > COVER_TRAVEL * COVER_OPEN_THRESHOLD;
