@@ -154,8 +154,13 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
         style={{
           position: "relative",
           width: 314,
-          height: 186,
-          clipPath: "inset(-80px -400px -10px 0px)",
+          // A couple px taller than the 188px ring so nothing gets clipped
+          // at rest; overflow (not clip-path, which is paint-only and does
+          // not establish a scroll-containment boundary some mobile
+          // browsers respect) is what stops the open cover — sliding past
+          // this box's edge — from making the page itself pannable.
+          height: 192,
+          overflow: "hidden",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
