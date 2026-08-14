@@ -98,13 +98,6 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
-  // Dragging precisely is fiddly on a small target — a plain tap on the
-  // cover opens it too (fires after pointerup only when barely moved).
-  const onCoverClick = () => {
-    if (coverOpen) return;
-    openCover();
-  };
-
   const onCoverKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (coverOpen) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -185,7 +178,6 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
           onPointerMove={onCoverPointerMove}
           onPointerUp={onCoverPointerUp}
           onPointerCancel={onCoverPointerUp}
-          onClick={onCoverClick}
           onKeyDown={onCoverKeyDown}
           className="absolute inset-4 flex cursor-grab touch-none select-none flex-col items-center justify-center gap-1 overflow-hidden rounded-full border border-white/25 bg-card/70 shadow-lg backdrop-blur-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
           style={{
