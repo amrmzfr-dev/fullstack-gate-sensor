@@ -11,8 +11,9 @@ const STALE_SECONDS = 3 * 60;
 // Glass safety cover: physically blocks the button until slid open. Slide
 // only — no tap shortcut. Re-latches 1.4s after a press, or after 8s idle
 // with nothing pressed.
-const COVER_W = 172;
-const COVER_H = 172;
+// 3px larger than the reference on every edge.
+const COVER_W = 178;
+const COVER_H = 178;
 const COVER_OPEN_X = 200;
 const COVER_OPEN_THRESHOLD = 0.45;
 const RELOCK_IDLE_MS = 8_000;
@@ -245,7 +246,7 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
             // off since it matched the cover's height exactly.
             height: COVER_H + 18,
             left: "50%", top: "50%",
-            marginLeft: -86, marginTop: -98,
+            marginLeft: -89, marginTop: -101,
             overflow: "hidden", zIndex: 5, pointerEvents: "none",
           }}
         >

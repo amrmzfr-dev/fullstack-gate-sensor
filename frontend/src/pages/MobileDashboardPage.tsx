@@ -33,8 +33,13 @@ function initials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+// The dock floats fixed over content now (not a layout sibling reserving its
+// own space), so every scrollable area needs real bottom clearance or its
+// last bit of content would end up hidden behind the dock.
+const DOCK_CLEARANCE = "calc(96px + env(safe-area-inset-bottom))";
+
 const screenPad: React.CSSProperties = {
-  padding: "calc(env(safe-area-inset-top) + 22px) 22px 0",
+  padding: `calc(env(safe-area-inset-top) + 22px) 22px ${DOCK_CLEARANCE}`,
   display: "flex",
   flexDirection: "column",
   gap: 11,
@@ -86,8 +91,14 @@ const TABS: ReadonlyArray<{ key: Tab; glyph: string; color: string }> = [
 
 function Dock({ tab, onChange, alertActive }: { tab: Tab; onChange: (t: Tab) => void; alertActive: boolean }) {
   return (
-    <div style={{ padding: "10px 22px calc(env(safe-area-inset-bottom) + 20px)", display: "flex", justifyContent: "center" }}>
-      <div style={{ display: "flex", gap: 6, background: "#1A1A1A", border: "1px solid rgba(255,255,255,.09)", borderRadius: 20, padding: 7 }}>
+    <div
+      style={{
+        position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 50,
+        padding: "10px 22px calc(env(safe-area-inset-bottom) + 20px)",
+        display: "flex", justifyContent: "center", pointerEvents: "none",
+      }}
+    >
+      <div style={{ pointerEvents: "auto", display: "flex", gap: 6, background: "#1A1A1A", border: "1px solid rgba(255,255,255,.09)", borderRadius: 20, padding: 7 }}>
         {TABS.map((it) => {
           const on = tab === it.key;
           return (
@@ -313,7 +324,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
           </div>
         )}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 8, paddingBottom: 8 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 8, paddingBottom: DOCK_CLEARANCE }}>
           {events.length === 0 ? (
             <span style={{ font: `400 12px ${GK_SANS}`, color: "rgba(255,255,255,.4)", textAlign: "center", padding: "24px 0" }}>
               {loading ? "Loading events..." : "No gate presses recorded yet"}
@@ -342,7 +353,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
         </div>
       </div>
 
-      <div style={{ ...screenPad, display: tab === "sound" ? "flex" : "none", overflowY: "auto", overflowX: "hidden", paddingBottom: 8 }}>
+      <div style={{ ...screenPad, display: tab === "sound" ? "flex" : "none", overflowY: "auto", overflowX: "hidden" }}>
         <H2>Sensor<br />Sound</H2>
         {config ? (
           <>
@@ -371,7 +382,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
         <div style={{ height: 8 }} />
       </div>
 
-      <div style={{ ...screenPad, display: tab === "firmware" ? "flex" : "none", overflowY: "auto", overflowX: "hidden", paddingBottom: 8 }}>
+      <div style={{ ...screenPad, display: tab === "firmware" ? "flex" : "none", overflowY: "auto", overflowX: "hidden" }}>
         <H2>Firmware<br />Update</H2>
         <FirmwarePanel username={username} styled />
       </div>
