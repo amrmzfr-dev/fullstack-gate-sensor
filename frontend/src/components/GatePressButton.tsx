@@ -10,8 +10,15 @@ const STALE_SECONDS = 3 * 60;
 
 // Glass safety cover: physically blocks the button until slid open. Slide
 // only — no tap shortcut. Re-latches 1.4s after a press, or after 8s idle
-// with nothing pressed.
-const COVER_TRAVEL = 150;
+// with nothing pressed. Sized smaller than the button (not a full-circle
+// cap) so a ring of the button stays visible around it, and its open
+// position is kept short enough to stay clear of the viewport edge —
+// unlike the design reference, there's no device bezel here to hide a
+// cover that slides far off-stage.
+const COVER_W = 140;
+const COVER_H = 96;
+const COVER_TRAVEL = 120;
+const COVER_OPEN_X = 168;
 const COVER_OPEN_THRESHOLD = 0.45;
 const RELOCK_IDLE_MS = 8_000;
 const RELOCK_AFTER_PRESS_MS = 1_400;
@@ -206,8 +213,9 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
 
         <div
           style={{
-            position: "absolute", width: 172, height: 172, left: "50%", top: "50%",
-            marginLeft: -86, marginTop: -98, zIndex: 5, pointerEvents: coverOpen ? "none" : "auto",
+            position: "absolute", width: COVER_W, height: COVER_H, left: "50%", top: "50%",
+            marginLeft: -COVER_W / 2, marginTop: -(COVER_H / 2 + 15),
+            zIndex: 5, pointerEvents: coverOpen ? "none" : "auto",
           }}
         >
           <div
@@ -228,15 +236,19 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
             style={{
               position: "absolute", inset: 0, cursor: "grab", touchAction: "none", userSelect: "none",
               outline: "none",
-              transform: `translateX(${coverOpen ? 200 : dragX}px)`,
-              transition: dragging ? "none" : "transform .34s cubic-bezier(.3,.9,.3,1)",
+              transform: `translateX(${coverOpen ? COVER_OPEN_X : dragX}px)`,
+              // Fades out as it slides so it's already invisible well before it
+              // would reach the edge of the viewport — there's no device bezel
+              // here to hide it sliding off-stage like in the design reference.
+              opacity: coverOpen ? 0 : 1,
+              transition: dragging ? "none" : "transform .34s cubic-bezier(.3,.9,.3,1), opacity .34s ease-out",
             }}
           >
             {/* glass thickness */}
             <div
               style={{
-                position: "absolute", left: 3, right: 3, bottom: -15, height: 26,
-                borderRadius: "0 0 15px 15px",
+                position: "absolute", left: 3, right: 3, bottom: -10, height: 18,
+                borderRadius: "0 0 12px 12px",
                 background: "linear-gradient(180deg,rgba(214,238,248,.34),rgba(120,152,168,.26) 60%,rgba(12,12,12,.5))",
                 border: "1px solid rgba(255,255,255,.22)", borderTop: "none", boxSizing: "border-box",
               }}
@@ -252,12 +264,12 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
                   "inset 0 2px 12px rgba(255,255,255,.45),inset 0 -14px 26px rgba(0,0,0,.16),0 4px 0 rgba(214,238,248,.3),0 8px 0 rgba(180,210,224,.26),0 12px 0 rgba(120,152,168,.3),0 15px 0 rgba(12,12,12,.6),0 22px 26px rgba(0,0,0,.5)",
                 backdropFilter: "blur(7px) saturate(1.25)",
                 WebkitBackdropFilter: "blur(7px) saturate(1.25)",
-                display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 14,
+                display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 10,
               }}
             >
               <div
                 style={{
-                  position: "absolute", left: 14, top: 16, right: 46, height: 2, borderRadius: 2,
+                  position: "absolute", left: 12, top: 12, right: 40, height: 2, borderRadius: 2,
                   background: "linear-gradient(90deg,rgba(255,255,255,.75),rgba(255,255,255,0))",
                 }}
               />
@@ -270,25 +282,25 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
               />
               <div
                 style={{
-                  display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 99,
+                  display: "flex", alignItems: "center", gap: 5, padding: "4px 9px", borderRadius: 99,
                   background: "rgba(12,12,12,.4)", border: "1px solid rgba(255,255,255,.28)",
                 }}
               >
                 <span
                   style={{
-                    font: `500 8.5px/1 ${GK_MONO}`, letterSpacing: ".16em", color: "rgba(255,255,255,.92)",
+                    font: `500 8px/1 ${GK_MONO}`, letterSpacing: ".16em", color: "rgba(255,255,255,.92)",
                     textTransform: "uppercase", whiteSpace: "nowrap",
                   }}
                 >
-                  Slide cover
+                  Slide
                 </span>
-                <span style={{ fontSize: 13, lineHeight: 1, color: "rgba(255,255,255,.92)" }}>›››</span>
+                <span style={{ fontSize: 12, lineHeight: 1, color: "rgba(255,255,255,.92)" }}>›››</span>
               </div>
               <div
                 style={{
-                  position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)",
-                  width: 13, height: 56, borderRadius: 6, background: "rgba(255,255,255,.26)",
-                  border: "1px solid rgba(255,255,255,.45)",
+                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                  width: 11, height: Math.max(24, COVER_H - 40), borderRadius: 5,
+                  background: "rgba(255,255,255,.26)", border: "1px solid rgba(255,255,255,.45)",
                 }}
               />
             </div>
