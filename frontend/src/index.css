@@ -101,6 +101,19 @@
   }
 }
 
+/* Hide scrollbars everywhere (still scrollable, just no visible track/thumb
+   and no layout width reserved for one). */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Edge */
+  width: 0;
+  height: 0;
+}
+
 /* Pulse ring behind the gate press button while a signal is being sent. */
 @keyframes gcPulse {
   0% {

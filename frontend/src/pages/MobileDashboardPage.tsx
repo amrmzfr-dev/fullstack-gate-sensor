@@ -216,7 +216,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
   return (
     <div style={{ height: "100dvh", background: GK_INK, display: "flex", flexDirection: "column", fontFamily: GK_SANS, overflow: "hidden", touchAction: "pan-y" }}>
       {/* Every tab stays mounted (hidden) so unsaved settings edits survive tab switches. */}
-      <div style={{ ...screenPad, display: tab === "control" ? "flex" : "none", overflow: "auto" }}>
+      <div style={{ ...screenPad, display: tab === "control" ? "flex" : "none", overflowY: "auto", overflowX: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <Label>Front driveway</Label>
@@ -295,7 +295,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
         <div style={{ height: 8 }} />
       </div>
 
-      <div style={{ ...screenPad, display: tab === "log" ? "flex" : "none", overflow: "auto" }}>
+      <div style={{ ...screenPad, display: tab === "log" ? "flex" : "none", overflowY: "auto", overflowX: "hidden" }}>
         <div>
           <H2>Press<br />Log</H2>
           <span style={{ font: `400 11px/1.35 ${GK_SANS}`, color: "rgba(255,255,255,.4)", maxWidth: 260, display: "block" }}>
@@ -313,7 +313,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
           </div>
         )}
 
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 8, paddingBottom: 8 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 8, paddingBottom: 8 }}>
           {events.length === 0 ? (
             <span style={{ font: `400 12px ${GK_SANS}`, color: "rgba(255,255,255,.4)", textAlign: "center", padding: "24px 0" }}>
               {loading ? "Loading events..." : "No gate presses recorded yet"}
@@ -342,7 +342,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
         </div>
       </div>
 
-      <div style={{ ...screenPad, display: tab === "sound" ? "flex" : "none", overflow: "auto", paddingBottom: 8 }}>
+      <div style={{ ...screenPad, display: tab === "sound" ? "flex" : "none", overflowY: "auto", overflowX: "hidden", paddingBottom: 8 }}>
         <H2>Sensor<br />Sound</H2>
         {config ? (
           <>
@@ -371,7 +371,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
         <div style={{ height: 8 }} />
       </div>
 
-      <div style={{ ...screenPad, display: tab === "firmware" ? "flex" : "none", overflow: "auto", paddingBottom: 8 }}>
+      <div style={{ ...screenPad, display: tab === "firmware" ? "flex" : "none", overflowY: "auto", overflowX: "hidden", paddingBottom: 8 }}>
         <H2>Firmware<br />Update</H2>
         <FirmwarePanel username={username} styled />
       </div>
