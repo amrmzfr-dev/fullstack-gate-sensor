@@ -75,19 +75,29 @@
     @apply border-border;
   }
 
-  /* Belt-and-suspenders against the gate press button's glass cover (which
-     slides via `transform`) dragging the whole page horizontally on mobile
-     WebKit — a nested overflow:hidden div alone doesn't reliably stop the
-     browser's own rubber-band pan gesture there, even though it does report
-     zero scrollWidth on desktop. */
-  html {
-    overflow-x: hidden;
-  }
-
   body {
     @apply bg-background text-foreground antialiased;
-    overflow-x: hidden;
-    overscroll-behavior-x: none;
+  }
+}
+
+/* Mobile dashboard only (same breakpoint as useIsMobile) — the gate press
+   button's glass cover slides via `transform`, which mobile WebKit's
+   rubber-band pan gesture can still drag the whole page along with, even
+   though a nested overflow:hidden div reports zero scrollWidth on desktop
+   and overflow-x:hidden on body alone didn't stop it on a real device.
+   Removing html/body as a scroller entirely is the reliable fix — the
+   mobile page already scrolls its own tab content internally instead.
+   Desktop's DashboardPage relies on normal page scroll, so this must not
+   apply there. */
+@media (max-width: 767px) {
+  html,
+  body {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 }
 

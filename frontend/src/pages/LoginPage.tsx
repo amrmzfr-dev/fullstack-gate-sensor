@@ -35,7 +35,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background px-4 text-foreground">
+    <div className="flex min-h-dvh items-center justify-center overflow-y-auto bg-background px-4 text-foreground">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2 text-center">
           <img src="/favicon.svg" alt="" className="size-12" />
