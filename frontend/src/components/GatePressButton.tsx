@@ -238,7 +238,13 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
             spacing, wider. */}
         <div
           style={{
-            position: "absolute", width: 700, height: COVER_H, left: "50%", top: "50%",
+            position: "absolute", width: 700,
+            // 18px taller than the cover itself: its decorative "glass
+            // thickness" bottom lip extends 15px below the cover's own
+            // box for the 3D-depth look, which this clip box was cutting
+            // off since it matched the cover's height exactly.
+            height: COVER_H + 18,
+            left: "50%", top: "50%",
             marginLeft: -86, marginTop: -98,
             overflow: "hidden", zIndex: 5, pointerEvents: "none",
           }}
