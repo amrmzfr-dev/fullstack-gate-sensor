@@ -1,4 +1,11 @@
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { CircleDot, Loader2 } from "lucide-react";
 
 // Steps the button walks through on each press. The controller is a dry relay
@@ -7,6 +14,14 @@ import { CircleDot, Loader2 } from "lucide-react";
 // since a fob or keypad press elsewhere would silently invalidate it.
 const STEPS = ["Open", "Stop", "Close", "Stop"] as const;
 const STALE_MS = 3 * 60_000;
+
+// Safety cover: a frosted pill sits over the button and physically blocks
+// clicks (pointer-events) until slid or tapped open. It re-closes itself
+// shortly after a press, or after sitting idle armed with nothing pressed.
+const COVER_TRAVEL = 110;
+const COVER_OPEN_THRESHOLD = 0.45;
+const RELOCK_IDLE_MS = 8_000;
+const RELOCK_AFTER_PRESS_MS = 1_400;
 
 interface GatePressButtonProps {
   pulsing: boolean;
@@ -19,17 +34,92 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
   const [lastPressAt, setLastPressAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragStartX = useRef(0);
+  const relockTimer = useRef<number | null>(null);
+
   useEffect(() => {
     if (lastPressAt === null) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [lastPressAt]);
 
+  const clearRelockTimer = useCallback(() => {
+    if (relockTimer.current !== null) {
+      window.clearTimeout(relockTimer.current);
+      relockTimer.current = null;
+    }
+  }, []);
+
+  const closeCover = useCallback(() => {
+    clearRelockTimer();
+    setCoverOpen(false);
+    setDragX(0);
+  }, [clearRelockTimer]);
+
+  const armRelock = useCallback(
+    (ms: number) => {
+      clearRelockTimer();
+      relockTimer.current = window.setTimeout(closeCover, ms);
+    },
+    [clearRelockTimer, closeCover],
+  );
+
+  useEffect(() => clearRelockTimer, [clearRelockTimer]);
+
+  const openCover = useCallback(() => {
+    setCoverOpen(true);
+    setDragX(0);
+    armRelock(RELOCK_IDLE_MS);
+  }, [armRelock]);
+
+  const onCoverPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (coverOpen) return;
+    dragStartX.current = e.clientX;
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onCoverPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    setDragX(Math.min(COVER_TRAVEL, Math.max(0, e.clientX - dragStartX.current)));
+  };
+
+  const onCoverPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    setDragging(false);
+    if (dragX >= COVER_TRAVEL * COVER_OPEN_THRESHOLD) {
+      openCover();
+    } else {
+      setDragX(0);
+    }
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  // Dragging precisely is fiddly on a small target — a plain tap on the
+  // cover opens it too (fires after pointerup only when barely moved).
+  const onCoverClick = () => {
+    if (coverOpen) return;
+    openCover();
+  };
+
+  const onCoverKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (coverOpen) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openCover();
+    }
+  };
+
   const handleClick = () => {
+    if (!coverOpen || pulsing) return;
     const pressedAt = Date.now();
     setPresses((p) => p + 1);
     setLastPressAt(pressedAt);
     setNow(pressedAt);
+    armRelock(RELOCK_AFTER_PRESS_MS);
     void onPress();
   };
 
@@ -42,12 +132,15 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
 
   const sub = pulsing
     ? "Sending…"
-    : nextIdx === -1
-      ? "Open · stop · close"
-      : `Next: ${STEPS[nextIdx].toLowerCase()}`;
+    : !coverOpen
+      ? "Covered"
+      : nextIdx === -1
+        ? "Open · stop · close"
+        : `Next: ${STEPS[nextIdx].toLowerCase()}`;
 
-  const footer =
-    nextIdx === -1
+  const footer = !coverOpen
+    ? "Safety cover closed · slide or tap the glass to arm the button"
+    : nextIdx === -1
       ? "Each press steps the gate to its next state — a press after a stop reverses it"
       : `Sent ${ago(secsAgo ?? 0)} ago · next press should ${STEPS[nextIdx].toLowerCase()}${
           nextIdx === 1 || nextIdx === 3 ? " the gate mid-travel" : " it"
@@ -82,6 +175,36 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
             {sub}
           </span>
         </button>
+
+        <div
+          role="button"
+          tabIndex={coverOpen ? -1 : 0}
+          aria-label="Slide open the safety cover to arm the gate button"
+          aria-pressed={coverOpen}
+          onPointerDown={onCoverPointerDown}
+          onPointerMove={onCoverPointerMove}
+          onPointerUp={onCoverPointerUp}
+          onPointerCancel={onCoverPointerUp}
+          onClick={onCoverClick}
+          onKeyDown={onCoverKeyDown}
+          className="absolute inset-4 flex cursor-grab touch-none select-none flex-col items-center justify-center gap-1 overflow-hidden rounded-full border border-white/25 bg-card/70 shadow-lg backdrop-blur-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          style={{
+            transform: `translateX(${coverOpen ? COVER_TRAVEL + 40 : dragX}px)`,
+            transition: dragging ? "none" : "transform 340ms cubic-bezier(.3,.9,.3,1)",
+            pointerEvents: coverOpen ? "none" : "auto",
+          }}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/35 via-white/5 to-transparent" aria-hidden />
+          <span className="relative font-label text-[9px] uppercase tracking-widest text-foreground/70">
+            Slide cover
+          </span>
+          <span className="relative text-sm tracking-widest text-foreground/55">›››</span>
+          <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1" aria-hidden>
+            <span className="h-px w-3 bg-foreground/30" />
+            <span className="h-px w-3 bg-foreground/30" />
+            <span className="h-px w-3 bg-foreground/30" />
+          </div>
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5">
