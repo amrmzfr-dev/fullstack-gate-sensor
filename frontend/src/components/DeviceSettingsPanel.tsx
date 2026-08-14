@@ -2,6 +2,16 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Play, Radio, Save, Volume2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  GK_ACCENT,
+  GK_CARD,
+  GK_HAIR,
+  GK_INK,
+  GK_LIME,
+  GK_MONO,
+  GK_SANS,
+  GK_YELLOW,
+} from "@/lib/gatekeepTheme";
 import type { DeviceConfig, ReceiverConfig, TransmitterConfig } from "@/types";
 
 type SaveTarget = "receiver" | "transmitter" | null;
@@ -61,31 +71,37 @@ interface SliderFieldProps {
 }
 
 const STYLED_THUMB =
-  "[&::-webkit-slider-thumb]:size-6 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-tone-sound [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:size-6 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-tone-sound [&::-moz-range-thumb]:shadow-md";
+  "[&::-webkit-slider-thumb]:size-6 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-[#0C0C0C] [&::-webkit-slider-thumb]:bg-[#F4C33F] [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:size-6 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-[#0C0C0C] [&::-moz-range-thumb]:bg-[#F4C33F] [&::-moz-range-thumb]:shadow-md";
 
 function SliderField({ label, value, min, max, step, onChange, format, styled = false }: SliderFieldProps) {
   const pct = ((value - min) / (max - min)) * 100;
+  if (styled) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ font: `500 10px ${GK_MONO}`, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(255,255,255,.4)" }}>
+            {label}
+          </span>
+          <span style={{ font: `600 12px ${GK_MONO}`, color: GK_YELLOW }}>{format(value)}</span>
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+          style={{ backgroundImage: `linear-gradient(to right, ${GK_YELLOW} ${pct}%, #2A2A2A ${pct}%)` }}
+          className={`h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none ${STYLED_THUMB}`}
+        />
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span
-          className={
-            styled
-              ? "font-label text-[10px] uppercase tracking-widest text-muted-foreground"
-              : "text-xs font-medium text-foreground"
-          }
-        >
-          {label}
-        </span>
-        <span
-          className={
-            styled
-              ? "font-label text-xs font-medium tabular-nums text-tone-sound"
-              : "text-xs tabular-nums text-muted-foreground"
-          }
-        >
-          {format(value)}
-        </span>
+        <span className="text-xs font-medium text-foreground">{label}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{format(value)}</span>
       </div>
       <input
         type="range"
@@ -94,16 +110,7 @@ function SliderField({ label, value, min, max, step, onChange, format, styled = 
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        style={
-          styled
-            ? { backgroundImage: `linear-gradient(to right, var(--tone-sound) ${pct}%, var(--border) ${pct}%)` }
-            : undefined
-        }
-        className={
-          styled
-            ? `h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none ${STYLED_THUMB}`
-            : "h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-        }
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
       />
     </div>
   );
@@ -111,17 +118,25 @@ function SliderField({ label, value, min, max, step, onChange, format, styled = 
 
 interface SaveMessageProps {
   message: { type: "ok" | "err"; text: string } | null;
+  styled?: boolean;
 }
 
-function SaveMessage({ message }: SaveMessageProps) {
+function SaveMessage({ message, styled = false }: SaveMessageProps) {
   if (!message) {
     return null;
   }
   if (message.type === "err") {
-    return <p className="text-xs text-destructive">{message.text}</p>;
+    return (
+      <p style={styled ? { font: `400 11px ${GK_SANS}`, color: GK_ACCENT, margin: 0 } : undefined} className={styled ? undefined : "text-xs text-destructive"}>
+        {message.text}
+      </p>
+    );
   }
   return (
-    <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+    <p
+      style={styled ? { display: "flex", alignItems: "center", gap: 4, font: `400 11px ${GK_SANS}`, color: GK_LIME, margin: 0 } : undefined}
+      className={styled ? undefined : "flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"}
+    >
       <CheckCircle2 className="size-3.5" />
       {message.text}
     </p>
@@ -189,44 +204,51 @@ export function ReceiverSettings({
 
   if (styled) {
     return (
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 rounded-3xl bg-tone-sound p-4 text-tone-sound-foreground">
-          <div className="flex items-center justify-between">
-            <span className="font-label text-[10px] uppercase tracking-widest opacity-70">Buzzer · beep style</span>
-            <Volume2 className="size-4 opacity-70" />
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ background: GK_YELLOW, borderRadius: 24, padding: 17, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ font: `500 10px ${GK_MONO}`, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(12,12,12,.7)" }}>
+              Buzzer · beep style
+            </span>
+            <Volume2 size={16} color="rgba(12,12,12,.7)" />
           </div>
-          <div className="font-display text-3xl font-black uppercase leading-none tracking-tight">
+          <div style={{ font: `900 40px/.85 ${GK_SANS}`, letterSpacing: "-.05em", color: GK_INK, textTransform: "uppercase" }}>
             {activeLabel}
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {BEEP_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => set(preset.values)}
-                className={`rounded-full px-3 py-1.5 font-label text-[10px] uppercase tracking-widest transition-colors ${
-                  activePreset === preset.id
-                    ? "bg-tone-sound-foreground text-tone-sound"
-                    : "bg-black/10 text-tone-sound-foreground/80 hover:bg-black/15"
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {BEEP_PRESETS.map((preset) => {
+              const on = activePreset === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => set(preset.values)}
+                  style={{
+                    padding: "7px 12px", borderRadius: 99, border: "none", cursor: "pointer",
+                    background: on ? GK_INK : "rgba(12,12,12,.12)",
+                    color: on ? GK_YELLOW : "rgba(12,12,12,.7)",
+                    font: `500 10px ${GK_MONO}`, letterSpacing: ".1em", textTransform: "uppercase",
+                  }}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+        <div style={{ background: GK_CARD, border: `1px solid ${GK_HAIR}`, borderRadius: 20, padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
           {sliders}
-          <p className="rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          <p style={{ margin: 0, borderRadius: 12, background: "rgba(255,255,255,.05)", padding: "8px 12px", font: `400 11px ${GK_SANS}`, color: "rgba(255,255,255,.5)" }}>
             {describePattern(form)}
           </p>
-          <div className="flex items-center justify-between gap-3">
-            <SaveMessage message={message} />
-            <div className="ml-auto flex gap-2">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <SaveMessage message={message} styled />
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
               <Button
-                variant="outline"
+                variant="ghost"
                 disabled={testing}
+                style={{ background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,.14)" }}
                 onClick={() => {
                   void handleTest();
                 }}
@@ -235,8 +257,9 @@ export function ReceiverSettings({
                 Test
               </Button>
               <Button
+                variant="ghost"
                 disabled={saving}
-                className="bg-tone-sound text-tone-sound-foreground hover:bg-tone-sound/90"
+                style={{ background: GK_YELLOW, color: GK_INK }}
                 onClick={() => {
                   void handleSave();
                 }}
@@ -344,28 +367,25 @@ export function TransmitterSettings({
     </div>
   );
 
-  const description = (
-    <p className={styled ? "rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground" : "rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground"}>
-      Re-checks a blocked beam every {seconds(form.pingIntervalMs)}; must stay under the receiver's alert window.
-    </p>
-  );
-
   if (styled) {
     return (
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between">
-          <span className="font-label text-[10px] uppercase tracking-widest text-muted-foreground">
+      <div style={{ background: GK_CARD, border: `1px solid ${GK_HAIR}`, borderRadius: 20, padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ font: `500 10px ${GK_MONO}`, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(255,255,255,.4)" }}>
             Transmitter · sensor
           </span>
-          <Radio className="size-4 text-muted-foreground" />
+          <Radio size={16} color="rgba(255,255,255,.4)" />
         </div>
         {sliders}
-        {description}
-        <div className="flex items-center justify-between gap-3">
-          <SaveMessage message={message} />
+        <p style={{ margin: 0, borderRadius: 12, background: "rgba(255,255,255,.05)", padding: "8px 12px", font: `400 11px ${GK_SANS}`, color: "rgba(255,255,255,.5)" }}>
+          Re-checks a blocked beam every {seconds(form.pingIntervalMs)}; must stay under the receiver's alert window.
+        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <SaveMessage message={message} styled />
           <Button
-            className="ml-auto bg-tone-sound text-tone-sound-foreground hover:bg-tone-sound/90"
+            variant="ghost"
             disabled={saving}
+            style={{ marginLeft: "auto", background: GK_YELLOW, color: GK_INK }}
             onClick={() => {
               void handleSave();
             }}
@@ -385,7 +405,9 @@ export function TransmitterSettings({
         <h3 className="text-sm font-medium">Transmitter — sensor</h3>
       </div>
       {sliders}
-      {description}
+      <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+        Re-checks a blocked beam every {seconds(form.pingIntervalMs)}; must stay under the receiver's alert window.
+      </p>
       <div className="flex items-center justify-between gap-3">
         <SaveMessage message={message} />
         <Button

@@ -1,43 +1,37 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
-import { CircleDot, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { GK_ACCENT, GK_INK, GK_MONO, GK_SANS } from "@/lib/gatekeepTheme";
 
 // Steps the button walks through on each press. The controller is a dry relay
 // with no position feedback, so this is only a local hint — never a claim
 // about where the gate actually is. It goes stale after a few minutes idle,
 // since a fob or keypad press elsewhere would silently invalidate it.
-const STEPS = ["Open", "Stop", "Close", "Stop"] as const;
-const STALE_MS = 3 * 60_000;
+const STEPS = ["OPEN", "STOP", "CLOSE", "STOP"] as const;
+const STALE_SECONDS = 3 * 60;
 
-// Safety cover: a frosted pill sits over the button and physically blocks
-// clicks (pointer-events) until slid or tapped open. It re-closes itself
-// shortly after a press, or after sitting idle armed with nothing pressed.
-const COVER_TRAVEL = 110;
+// Glass safety cover: physically blocks the button until slid open. Slide
+// only — no tap shortcut. Re-latches 1.4s after a press, or after 8s idle
+// with nothing pressed.
+const COVER_TRAVEL = 150;
 const COVER_OPEN_THRESHOLD = 0.45;
 const RELOCK_IDLE_MS = 8_000;
 const RELOCK_AFTER_PRESS_MS = 1_400;
+const CYL = 15;
 
 interface GatePressButtonProps {
   pulsing: boolean;
   onPress: () => void | Promise<void>;
-  className?: string;
 }
 
-export function GatePressButton({ pulsing, onPress, className = "" }: GatePressButtonProps) {
+export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
   const [presses, setPresses] = useState(0);
   const [lastPressAt, setLastPressAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [pressed, setPressed] = useState(false);
 
   const [coverOpen, setCoverOpen] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
-  const dragStartX = useRef(0);
+  const startX = useRef(0);
   const relockTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -54,10 +48,10 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
   }, []);
 
   const closeCover = useCallback(() => {
-    clearRelockTimer();
+    relockTimer.current = null;
     setCoverOpen(false);
     setDragX(0);
-  }, [clearRelockTimer]);
+  }, []);
 
   const armRelock = useCallback(
     (ms: number) => {
@@ -69,41 +63,31 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
 
   useEffect(() => clearRelockTimer, [clearRelockTimer]);
 
-  const openCover = useCallback(() => {
-    setCoverOpen(true);
-    setDragX(0);
-    armRelock(RELOCK_IDLE_MS);
-  }, [armRelock]);
-
+  // Window-level listeners in the capture phase so a parent scroll container
+  // never steals the drag once it has started on the cover.
   const onCoverPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (coverOpen) return;
-    dragStartX.current = e.clientX;
+    e.preventDefault();
+    e.stopPropagation();
+    startX.current = e.clientX;
     setDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
 
-  const onCoverPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    setDragX(Math.min(COVER_TRAVEL, Math.max(0, e.clientX - dragStartX.current)));
-  };
-
-  const onCoverPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    setDragging(false);
-    if (dragX >= COVER_TRAVEL * COVER_OPEN_THRESHOLD) {
-      openCover();
-    } else {
+    const move = (ev: PointerEvent) => {
+      ev.preventDefault();
+      setDragX(Math.max(0, Math.min(COVER_TRAVEL, ev.clientX - startX.current)));
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      setDragging(false);
+      const traveled = Math.max(0, Math.min(COVER_TRAVEL, ev.clientX - startX.current));
+      const open = traveled > COVER_TRAVEL * COVER_OPEN_THRESHOLD;
+      setCoverOpen(open);
       setDragX(0);
-    }
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-
-  const onCoverKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (coverOpen) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      openCover();
-    }
+      if (open) armRelock(RELOCK_IDLE_MS);
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
   };
 
   const handleClick = () => {
@@ -117,11 +101,20 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
   };
 
   const secsAgo = lastPressAt === null ? null : Math.max(0, Math.round((now - lastPressAt) / 1000));
-  const stale = presses > 0 && secsAgo !== null && secsAgo * 1000 > STALE_MS;
+  const stale = presses > 0 && secsAgo !== null && secsAgo > STALE_SECONDS;
   const idx = presses === 0 || stale ? -1 : (presses - 1) % STEPS.length;
   const nextIdx = idx === -1 ? -1 : (idx + 1) % STEPS.length;
 
-  const ago = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m`);
+  const ago = (s: number | null) => (s === null ? "" : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`);
+
+  const rim = `color-mix(in oklab, ${GK_ACCENT} 62%, #000)`;
+  const rim2 = `color-mix(in oklab, ${GK_ACCENT} 40%, #000)`;
+  const capShadow = pressed
+    ? "inset 0 8px 16px rgba(0,0,0,.5)"
+    : `inset 0 3px 0 rgba(255,255,255,.45), inset 0 -6px 12px rgba(0,0,0,.18),0 4px 0 ${rim},0 8px 0 ${rim},0 12px 0 ${rim2},0 ${CYL}px 0 ${rim2},0 22px 22px rgba(0,0,0,.55)`;
+  const housingShadow = pressed
+    ? "inset 0 10px 20px rgba(0,0,0,.6)"
+    : `0 4px 0 ${rim},0 8px 0 ${rim},0 12px 0 ${rim2},0 ${CYL}px 0 ${rim2},0 22px 22px rgba(0,0,0,.55),inset 0 8px 16px rgba(0,0,0,.55)`;
 
   const sub = pulsing
     ? "Sending…"
@@ -132,95 +125,206 @@ export function GatePressButton({ pulsing, onPress, className = "" }: GatePressB
         : `Next: ${STEPS[nextIdx].toLowerCase()}`;
 
   const footer = !coverOpen
-    ? "Safety cover closed · slide or tap the glass to arm the button"
+    ? "Safety cover closed · slide the glass to arm the button"
     : nextIdx === -1
-      ? "Each press steps the gate to its next state — a press after a stop reverses it"
-      : `Sent ${ago(secsAgo ?? 0)} ago · next press should ${STEPS[nextIdx].toLowerCase()}${
-          nextIdx === 1 || nextIdx === 3 ? " the gate mid-travel" : " it"
+      ? "Each press steps the gate to its next state · a press after a stop reverses it"
+      : `Sent ${ago(secsAgo)} · next press should ${STEPS[nextIdx].toLowerCase()}${
+          nextIdx % 2 ? " the gate mid-travel" : " it"
         }`;
 
   return (
-    <div className={`flex flex-col items-center gap-3 ${className}`}>
-      <div className="relative flex size-48 items-center justify-center">
-        <div className="absolute inset-0 rounded-full border border-border" aria-hidden />
-        <div className="absolute inset-3 rounded-full border border-dashed border-border" aria-hidden />
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+      <div
+        style={{
+          position: "relative",
+          width: 314,
+          height: 186,
+          clipPath: "inset(-80px -400px -10px 0px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute", left: "50%", top: "50%", width: 188, height: 188,
+            margin: "-96px 0 0 -94px", borderRadius: 99, border: "1px solid rgba(255,255,255,.09)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute", left: "50%", top: "50%", width: 162, height: 162,
+            margin: "-83px 0 0 -81px", borderRadius: 99, border: "1px dashed rgba(255,255,255,.12)",
+          }}
+        />
+        {/* static cylinder housing: the cap sinks INTO this */}
+        <div
+          style={{
+            position: "absolute", left: "50%", top: "50%", width: 154, height: 154,
+            margin: "-77px 0 0 -77px", borderRadius: 99, background: rim2,
+            boxShadow: housingShadow, transition: "box-shadow .12s",
+          }}
+        />
         {pulsing && (
-          <span
-            className="absolute inset-5 animate-ping rounded-full bg-tone-control/60"
-            aria-hidden
+          <div
+            style={{
+              position: "absolute", width: 154, height: 154, borderRadius: 99,
+              background: GK_ACCENT, animation: "gcPulse 1.1s ease-out infinite",
+            }}
           />
         )}
+
         <button
           type="button"
           onClick={handleClick}
+          onPointerDown={() => setPressed(true)}
+          onPointerUp={() => setPressed(false)}
+          onPointerLeave={() => setPressed(false)}
+          onPointerCancel={() => setPressed(false)}
           disabled={pulsing}
-          className="relative flex size-40 flex-col items-center justify-center gap-1 rounded-full bg-tone-control text-tone-control-foreground shadow-[0_10px_0_oklch(0.45_0.16_35)] transition-transform active:translate-y-1.5 active:shadow-[0_4px_0_oklch(0.45_0.16_35)] disabled:opacity-90"
+          style={{
+            position: "relative", width: 154, height: 154, borderRadius: 99, border: "none",
+            background: GK_ACCENT, display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: 5, cursor: "pointer", userSelect: "none", boxShadow: capShadow,
+            transform: pressed ? "translateY(7px)" : "translateY(-8px)",
+            transition: "background .12s, box-shadow .12s, transform .12s",
+          }}
         >
-          {pulsing ? (
-            <Loader2 className="size-7 animate-spin" />
-          ) : (
-            <CircleDot className="size-7" />
-          )}
-          <span className="font-display text-2xl font-black uppercase tracking-tight">
+          <span style={{ fontSize: 30, lineHeight: 1, color: GK_INK }}>◉</span>
+          <span style={{ font: `900 23px/.9 ${GK_SANS}`, letterSpacing: "-.03em", color: GK_INK, textTransform: "uppercase" }}>
             Press
           </span>
-          <span className="font-label text-[10px] uppercase tracking-widest opacity-75">
+          <span
+            style={{
+              font: `500 9px/1.3 ${GK_MONO}`, letterSpacing: ".1em", color: "rgba(12,12,12,.62)",
+              textTransform: "uppercase", textAlign: "center",
+            }}
+          >
             {sub}
           </span>
         </button>
 
         <div
-          role="button"
-          tabIndex={coverOpen ? -1 : 0}
-          aria-label="Slide open the safety cover to arm the gate button"
-          aria-pressed={coverOpen}
-          onPointerDown={onCoverPointerDown}
-          onPointerMove={onCoverPointerMove}
-          onPointerUp={onCoverPointerUp}
-          onPointerCancel={onCoverPointerUp}
-          onKeyDown={onCoverKeyDown}
-          className="absolute inset-4 flex cursor-grab touch-none select-none flex-col items-center justify-center gap-1 overflow-hidden rounded-full border border-white/25 bg-card/70 shadow-lg backdrop-blur-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
           style={{
-            transform: `translateX(${coverOpen ? COVER_TRAVEL + 40 : dragX}px)`,
-            transition: dragging ? "none" : "transform 340ms cubic-bezier(.3,.9,.3,1)",
-            pointerEvents: coverOpen ? "none" : "auto",
+            position: "absolute", width: 172, height: 172, left: "50%", top: "50%",
+            marginLeft: -86, marginTop: -98, zIndex: 5, pointerEvents: coverOpen ? "none" : "auto",
           }}
         >
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/35 via-white/5 to-transparent" aria-hidden />
-          <span className="relative font-label text-[9px] uppercase tracking-widest text-foreground/70">
-            Slide cover
-          </span>
-          <span className="relative text-sm tracking-widest text-foreground/55">›››</span>
-          <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1" aria-hidden>
-            <span className="h-px w-3 bg-foreground/30" />
-            <span className="h-px w-3 bg-foreground/30" />
-            <span className="h-px w-3 bg-foreground/30" />
+          <div
+            role="button"
+            tabIndex={coverOpen ? -1 : 0}
+            aria-label="Slide open the safety cover to arm the gate button"
+            aria-pressed={coverOpen}
+            onPointerDown={onCoverPointerDown}
+            onKeyDown={(e) => {
+              if (coverOpen) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setCoverOpen(true);
+                setDragX(0);
+                armRelock(RELOCK_IDLE_MS);
+              }
+            }}
+            style={{
+              position: "absolute", inset: 0, cursor: "grab", touchAction: "none", userSelect: "none",
+              outline: "none",
+              transform: `translateX(${coverOpen ? 200 : dragX}px)`,
+              transition: dragging ? "none" : "transform .34s cubic-bezier(.3,.9,.3,1)",
+            }}
+          >
+            {/* glass thickness */}
+            <div
+              style={{
+                position: "absolute", left: 3, right: 3, bottom: -15, height: 26,
+                borderRadius: "0 0 15px 15px",
+                background: "linear-gradient(180deg,rgba(214,238,248,.34),rgba(120,152,168,.26) 60%,rgba(12,12,12,.5))",
+                border: "1px solid rgba(255,255,255,.22)", borderTop: "none", boxSizing: "border-box",
+              }}
+            />
+            {/* lid */}
+            <div
+              style={{
+                position: "absolute", inset: 0, borderRadius: 14, boxSizing: "border-box", overflow: "hidden",
+                background:
+                  "linear-gradient(128deg,rgba(255,255,255,.46) 0%,rgba(214,238,248,.20) 34%,rgba(214,238,248,.12) 58%,rgba(255,255,255,.30) 100%)",
+                border: "1px solid rgba(255,255,255,.6)",
+                boxShadow:
+                  "inset 0 2px 12px rgba(255,255,255,.45),inset 0 -14px 26px rgba(0,0,0,.16),0 4px 0 rgba(214,238,248,.3),0 8px 0 rgba(180,210,224,.26),0 12px 0 rgba(120,152,168,.3),0 15px 0 rgba(12,12,12,.6),0 22px 26px rgba(0,0,0,.5)",
+                backdropFilter: "blur(7px) saturate(1.25)",
+                WebkitBackdropFilter: "blur(7px) saturate(1.25)",
+                display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute", left: 14, top: 16, right: 46, height: 2, borderRadius: 2,
+                  background: "linear-gradient(90deg,rgba(255,255,255,.75),rgba(255,255,255,0))",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute", left: "-10%", top: "-20%", width: "46%", height: "150%",
+                  transform: "rotate(24deg)",
+                  background: "linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.22),rgba(255,255,255,0))",
+                }}
+              />
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 99,
+                  background: "rgba(12,12,12,.4)", border: "1px solid rgba(255,255,255,.28)",
+                }}
+              >
+                <span
+                  style={{
+                    font: `500 8.5px/1 ${GK_MONO}`, letterSpacing: ".16em", color: "rgba(255,255,255,.92)",
+                    textTransform: "uppercase", whiteSpace: "nowrap",
+                  }}
+                >
+                  Slide cover
+                </span>
+                <span style={{ fontSize: 13, lineHeight: 1, color: "rgba(255,255,255,.92)" }}>›››</span>
+              </div>
+              <div
+                style={{
+                  position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)",
+                  width: 13, height: 56, borderRadius: 6, background: "rgba(255,255,255,.26)",
+                  border: "1px solid rgba(255,255,255,.45)",
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
         {STEPS.map((step, i) => (
-          <div key={`${step}-${i}`} className="flex items-center gap-1.5">
-            <span
-              className={`font-label rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-widest ${
-                i === nextIdx
-                  ? "border-tone-control bg-tone-control text-tone-control-foreground"
-                  : "border-border text-muted-foreground"
-              }`}
+          <div key={`${step}-${i}`} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div
+              style={{
+                padding: "5px 9px", borderRadius: 99,
+                background: i === nextIdx ? GK_ACCENT : "#1A1A1A",
+                border: `1px solid ${i === nextIdx ? GK_ACCENT : "rgba(255,255,255,.1)"}`,
+                font: `500 9px ${GK_MONO}`, letterSpacing: ".1em",
+                color: i === nextIdx ? GK_INK : "rgba(255,255,255,.4)", whiteSpace: "nowrap",
+              }}
             >
               {step}
-            </span>
+            </div>
             {i < STEPS.length - 1 && (
-              <span className="text-xs text-muted-foreground/50">→</span>
+              <span style={{ font: `400 10px ${GK_MONO}`, color: "rgba(255,255,255,.25)" }}>→</span>
             )}
           </div>
         ))}
       </div>
 
-      <p className="max-w-[280px] text-center font-label text-[10px] leading-relaxed text-muted-foreground">
+      <span
+        style={{
+          font: `400 10px/1.4 ${GK_MONO}`, color: "rgba(255,255,255,.36)",
+          textAlign: "center", maxWidth: 290,
+        }}
+      >
         {footer}
-      </p>
+      </span>
     </div>
   );
 }

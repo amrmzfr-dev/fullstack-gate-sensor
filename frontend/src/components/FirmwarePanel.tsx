@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useFirmware } from "@/hooks/useFirmware";
 import { HttpError } from "@/lib/api";
+import { GK_ACCENT, GK_CARD, GK_HAIR, GK_INK, GK_LIME, GK_MONO, GK_SANS } from "@/lib/gatekeepTheme";
 import type { DeviceFirmwareStatus, FirmwareDevice } from "@/types";
 
 const DEVICE_LABELS: Record<FirmwareDevice, string> = {
@@ -44,22 +45,26 @@ function DeviceUploadCard({ status, uploading, onUpload, styled = false }: Devic
 
   if (styled) {
     return (
-      <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between">
-          <span className="font-display text-base font-extrabold uppercase leading-none tracking-tight">
-            {DEVICE_LABELS[status.device]}
-          </span>
-          <span className="rounded-full bg-muted px-2.5 py-1 font-label text-[9px] uppercase tracking-widest text-muted-foreground">
+      <div style={{ background: GK_CARD, border: `1px solid ${GK_HAIR}`, borderRadius: 20, padding: 15, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ font: `700 16px ${GK_SANS}`, color: "#fff" }}>{DEVICE_LABELS[status.device]}</span>
+          <span
+            style={{
+              padding: "5px 9px", borderRadius: 99, background: "#1F1F1F", border: "1px solid rgba(255,255,255,.12)",
+              font: `500 9px ${GK_MONO}`, color: "rgba(255,255,255,.7)",
+            }}
+          >
             {status.manifest ? `v${status.manifest.version}` : "No firmware yet"}
           </span>
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <Input
             type="file"
             accept=".bin"
             disabled={uploading}
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            style={{ background: "#1F1F1F", color: "#fff", border: "1px solid rgba(255,255,255,.14)" }}
           />
           <Input
             type="text"
@@ -67,10 +72,12 @@ function DeviceUploadCard({ status, uploading, onUpload, styled = false }: Devic
             value={version}
             disabled={uploading}
             onChange={(event) => setVersion(event.target.value)}
+            style={{ background: "#1F1F1F", color: "#fff", border: "1px solid rgba(255,255,255,.14)" }}
           />
           <Button
+            variant="ghost"
             disabled={!file || !version.trim() || uploading}
-            className="justify-center bg-foreground text-background hover:bg-foreground/90"
+            style={{ justifyContent: "center", background: "#fff", color: GK_INK }}
             onClick={() => {
               void handleSubmit();
             }}
@@ -80,12 +87,12 @@ function DeviceUploadCard({ status, uploading, onUpload, styled = false }: Devic
           </Button>
         </div>
 
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        {error && <span style={{ font: `400 11px ${GK_SANS}`, color: GK_ACCENT }}>{error}</span>}
         {justUploaded && !error && (
-          <p className="flex items-center gap-1 font-label text-[10px] uppercase tracking-widest text-primary">
+          <span style={{ display: "flex", alignItems: "center", gap: 4, font: `500 10px ${GK_MONO}`, letterSpacing: ".08em", textTransform: "uppercase", color: GK_LIME }}>
             <CheckCircle2 className="size-3.5" />
             Uploaded — pushed over MQTT
-          </p>
+          </span>
         )}
       </div>
     );
@@ -153,11 +160,11 @@ export function FirmwarePanel({ username, styled = false }: FirmwarePanelProps) 
 
   if (styled) {
     return (
-      <div className="space-y-3">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 8 }}>
         {isAdmin ? (
           <>
             {loading && statuses.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Loading firmware status...</p>
+              <span style={{ font: `400 12px ${GK_SANS}`, color: "rgba(255,255,255,.4)" }}>Loading firmware status...</span>
             ) : (
               statuses.map((status) => (
                 <DeviceUploadCard
@@ -169,12 +176,14 @@ export function FirmwarePanel({ username, styled = false }: FirmwarePanelProps) 
                 />
               ))
             )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <span style={{ font: `400 12px ${GK_SANS}`, color: GK_ACCENT }}>{error}</span>}
           </>
         ) : (
-          <div className="flex items-start gap-2.5 rounded-2xl border border-border bg-card px-4 py-4 text-sm text-muted-foreground">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
-            <p>Firmware updates are locked to the system admin account.</p>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: GK_CARD, border: `1px solid ${GK_HAIR}`, borderRadius: 20, padding: 16 }}>
+            <ShieldAlert size={16} color="#F4C33F" style={{ marginTop: 2, flexShrink: 0 }} />
+            <p style={{ margin: 0, font: `400 12px/1.4 ${GK_SANS}`, color: "rgba(255,255,255,.5)" }}>
+              Firmware updates are locked to the system admin account.
+            </p>
           </div>
         )}
       </div>

@@ -25,14 +25,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-tone-control: var(--tone-control);
-  --color-tone-control-foreground: var(--tone-control-foreground);
-  --color-tone-log: var(--tone-log);
-  --color-tone-log-foreground: var(--tone-log-foreground);
-  --color-tone-sound: var(--tone-sound);
-  --color-tone-sound-foreground: var(--tone-sound-foreground);
-  --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
-  --font-label: "DM Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 :root {
@@ -55,15 +47,6 @@
   --border: oklch(0.92 0.012 155);
   --input: oklch(0.92 0.012 155);
   --ring: oklch(0.62 0.14 150);
-
-  /* Fixed brand accents — one per mobile screen (control/log/sound) — kept
-     constant across light/dark since they're solid-fill chips, not surfaces. */
-  --tone-control: oklch(0.68 0.19 35);
-  --tone-control-foreground: oklch(0.17 0.02 40);
-  --tone-log: oklch(0.62 0.18 295);
-  --tone-log-foreground: oklch(0.99 0.01 295);
-  --tone-sound: oklch(0.82 0.15 95);
-  --tone-sound-foreground: oklch(0.17 0.03 95);
 }
 
 .dark {
@@ -94,5 +77,17 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Pulse ring behind the gate press button while a signal is being sent. */
+@keyframes gcPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
   }
 }
