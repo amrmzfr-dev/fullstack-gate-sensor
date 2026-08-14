@@ -75,8 +75,19 @@
     @apply border-border;
   }
 
+  /* Belt-and-suspenders against the gate press button's glass cover (which
+     slides via `transform`) dragging the whole page horizontally on mobile
+     WebKit — a nested overflow:hidden div alone doesn't reliably stop the
+     browser's own rubber-band pan gesture there, even though it does report
+     zero scrollWidth on desktop. */
+  html {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
   }
 }
 

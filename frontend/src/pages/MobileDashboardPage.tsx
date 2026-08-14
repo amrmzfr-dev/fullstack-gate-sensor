@@ -214,7 +214,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
   const buzzerTextMain = alertActive || isSilenced ? GK_INK : "#fff";
 
   return (
-    <div style={{ height: "100dvh", background: GK_INK, display: "flex", flexDirection: "column", fontFamily: GK_SANS, overflow: "hidden" }}>
+    <div style={{ height: "100dvh", background: GK_INK, display: "flex", flexDirection: "column", fontFamily: GK_SANS, overflow: "hidden", touchAction: "pan-y" }}>
       {/* Every tab stays mounted (hidden) so unsaved settings edits survive tab switches. */}
       <div style={{ ...screenPad, display: tab === "control" ? "flex" : "none", overflow: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
