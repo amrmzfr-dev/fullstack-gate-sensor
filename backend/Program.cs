@@ -30,6 +30,10 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // Without this, the handler remaps short claim types (e.g. "unique_name")
+        // to legacy long-form URIs on validation, so User.FindFirst(UniqueName)
+        // in the controllers silently returns null and never matches.
+        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
