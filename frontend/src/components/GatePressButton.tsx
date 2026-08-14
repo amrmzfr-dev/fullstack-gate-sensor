@@ -161,13 +161,7 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
         style={{
           position: "relative",
           width: 314,
-          // A couple px taller than the 188px ring so nothing gets clipped
-          // at rest; overflow (not clip-path, which is paint-only and does
-          // not establish a scroll-containment boundary some mobile
-          // browsers respect) is what stops the open cover — sliding past
-          // this box's edge — from making the page itself pannable.
-          height: 192,
-          overflow: "hidden",
+          height: 186,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -232,15 +226,21 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
           </span>
         </button>
 
+        {/* Clip boundary for the glass only — not the button/rings/stage, and
+            not any other content on the screen. Sized generously wider than
+            the glass could ever travel (its real max reach is well under
+            300px from center) so it never visibly triggers; it exists only
+            to satisfy the same close-ancestor overflow:hidden that actually
+            stops the page itself from being draggable while the cover is
+            open (plain page-root overflow:hidden alone did not — confirmed
+            by several failed attempts). Absolutely positioned so its width
+            can't force the page, or any of the surrounding UI's normal
+            spacing, wider. */}
         <div
           style={{
-            position: "absolute", width: COVER_W, height: COVER_H, left: "50%", top: "50%",
+            position: "absolute", width: 700, height: COVER_H, left: "50%", top: "50%",
             marginLeft: -86, marginTop: -98,
-            // Stays interactive even once open — its hit area has moved
-            // clear of the button by then, and this is what lets it be
-            // grabbed and slid back closed by hand instead of only ever
-            // re-latching on its own timers.
-            zIndex: 5, pointerEvents: "auto",
+            overflow: "hidden", zIndex: 5, pointerEvents: "none",
           }}
         >
           <div
@@ -262,8 +262,11 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
               setDragX(0);
             }}
             style={{
-              position: "absolute", inset: 0, cursor: "grab", touchAction: "none", userSelect: "none",
-              outline: "none",
+              // Same size/start position the glass has always had — only the
+              // clipping box around it got wider, not the glass itself.
+              position: "absolute", left: 0, top: 0, width: COVER_W, height: COVER_H,
+              cursor: "grab", touchAction: "none", userSelect: "none", outline: "none",
+              pointerEvents: "auto",
               transform: `translateX(${dragging ? dragX : coverOpen ? COVER_OPEN_X : 0}px)`,
               transition: dragging ? "none" : "transform .34s cubic-bezier(.3,.9,.3,1)",
             }}
