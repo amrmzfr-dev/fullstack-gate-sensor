@@ -57,14 +57,35 @@ interface SliderFieldProps {
   step: number;
   onChange: (value: number) => void;
   format: (value: number) => string;
+  styled?: boolean;
 }
 
-function SliderField({ label, value, min, max, step, onChange, format }: SliderFieldProps) {
+const STYLED_THUMB =
+  "[&::-webkit-slider-thumb]:size-6 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-tone-sound [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:size-6 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-tone-sound [&::-moz-range-thumb]:shadow-md";
+
+function SliderField({ label, value, min, max, step, onChange, format, styled = false }: SliderFieldProps) {
+  const pct = ((value - min) / (max - min)) * 100;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-foreground">{label}</span>
-        <span className="text-xs tabular-nums text-muted-foreground">{format(value)}</span>
+        <span
+          className={
+            styled
+              ? "font-label text-[10px] uppercase tracking-widest text-muted-foreground"
+              : "text-xs font-medium text-foreground"
+          }
+        >
+          {label}
+        </span>
+        <span
+          className={
+            styled
+              ? "font-label text-xs font-medium tabular-nums text-tone-sound"
+              : "text-xs tabular-nums text-muted-foreground"
+          }
+        >
+          {format(value)}
+        </span>
       </div>
       <input
         type="range"
@@ -73,7 +94,16 @@ function SliderField({ label, value, min, max, step, onChange, format }: SliderF
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+        style={
+          styled
+            ? { backgroundImage: `linear-gradient(to right, var(--tone-sound) ${pct}%, var(--border) ${pct}%)` }
+            : undefined
+        }
+        className={
+          styled
+            ? `h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none ${STYLED_THUMB}`
+            : "h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+        }
       />
     </div>
   );
@@ -103,11 +133,13 @@ export function ReceiverSettings({
   saving,
   onSave,
   onTest,
+  styled = false,
 }: {
   initial: ReceiverConfig;
   saving: boolean;
   onSave: (config: ReceiverConfig) => Promise<string | null>;
   onTest: () => Promise<void>;
+  styled?: boolean;
 }) {
   const [form, setForm] = useState<ReceiverConfig>(initial);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -123,6 +155,7 @@ export function ReceiverSettings({
   };
 
   const activePreset = matchingPreset(form);
+  const activeLabel = BEEP_PRESETS.find((preset) => preset.id === activePreset)?.label ?? "Custom";
 
   const handleSave = async () => {
     const error = await onSave(form);
@@ -142,6 +175,81 @@ export function ReceiverSettings({
       setTesting(false);
     }
   };
+
+  const sliders = (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <SliderField styled={styled} label="Beep length" value={form.beepOnMs} min={50} max={5000} step={50} onChange={(v) => set({ beepOnMs: v })} format={seconds} />
+      <SliderField styled={styled} label="Gap between beeps" value={form.beepGapMs} min={0} max={5000} step={50} onChange={(v) => set({ beepGapMs: v })} format={seconds} />
+      <SliderField styled={styled} label="Pause after a cycle" value={form.pauseMs} min={0} max={10000} step={100} onChange={(v) => set({ pauseMs: v })} format={seconds} />
+      <SliderField styled={styled} label="Beeps per cycle" value={form.beepsPerCycle} min={1} max={20} step={1} onChange={(v) => set({ beepsPerCycle: v })} format={(v) => `${v}`} />
+      <SliderField styled={styled} label="Alert window (min. sound time)" value={form.alertWindowMs} min={1000} max={30000} step={500} onChange={(v) => set({ alertWindowMs: v })} format={seconds} />
+      <SliderField styled={styled} label="Acknowledge cooldown" value={form.acknowledgeCooldownMs} min={0} max={300000} step={5000} onChange={(v) => set({ acknowledgeCooldownMs: v })} format={seconds} />
+    </div>
+  );
+
+  if (styled) {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 rounded-3xl bg-tone-sound p-4 text-tone-sound-foreground">
+          <div className="flex items-center justify-between">
+            <span className="font-label text-[10px] uppercase tracking-widest opacity-70">Buzzer · beep style</span>
+            <Volume2 className="size-4 opacity-70" />
+          </div>
+          <div className="font-display text-3xl font-black uppercase leading-none tracking-tight">
+            {activeLabel}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {BEEP_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => set(preset.values)}
+                className={`rounded-full px-3 py-1.5 font-label text-[10px] uppercase tracking-widest transition-colors ${
+                  activePreset === preset.id
+                    ? "bg-tone-sound-foreground text-tone-sound"
+                    : "bg-black/10 text-tone-sound-foreground/80 hover:bg-black/15"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+          {sliders}
+          <p className="rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            {describePattern(form)}
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <SaveMessage message={message} />
+            <div className="ml-auto flex gap-2">
+              <Button
+                variant="outline"
+                disabled={testing}
+                onClick={() => {
+                  void handleTest();
+                }}
+              >
+                {testing ? <Loader2 className="animate-spin" /> : <Play />}
+                Test
+              </Button>
+              <Button
+                disabled={saving}
+                className="bg-tone-sound text-tone-sound-foreground hover:bg-tone-sound/90"
+                onClick={() => {
+                  void handleSave();
+                }}
+              >
+                {saving ? <Loader2 className="animate-spin" /> : <Save />}
+                Save
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 rounded-lg border border-border p-4">
@@ -166,62 +274,7 @@ export function ReceiverSettings({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <SliderField
-          label="Beep length"
-          value={form.beepOnMs}
-          min={50}
-          max={5000}
-          step={50}
-          onChange={(v) => set({ beepOnMs: v })}
-          format={seconds}
-        />
-        <SliderField
-          label="Gap between beeps"
-          value={form.beepGapMs}
-          min={0}
-          max={5000}
-          step={50}
-          onChange={(v) => set({ beepGapMs: v })}
-          format={seconds}
-        />
-        <SliderField
-          label="Pause after a cycle"
-          value={form.pauseMs}
-          min={0}
-          max={10000}
-          step={100}
-          onChange={(v) => set({ pauseMs: v })}
-          format={seconds}
-        />
-        <SliderField
-          label="Beeps per cycle"
-          value={form.beepsPerCycle}
-          min={1}
-          max={20}
-          step={1}
-          onChange={(v) => set({ beepsPerCycle: v })}
-          format={(v) => `${v}`}
-        />
-        <SliderField
-          label="Alert window (min. sound time)"
-          value={form.alertWindowMs}
-          min={1000}
-          max={30000}
-          step={500}
-          onChange={(v) => set({ alertWindowMs: v })}
-          format={seconds}
-        />
-        <SliderField
-          label="Acknowledge cooldown"
-          value={form.acknowledgeCooldownMs}
-          min={0}
-          max={300000}
-          step={5000}
-          onChange={(v) => set({ acknowledgeCooldownMs: v })}
-          format={seconds}
-        />
-      </div>
+      {sliders}
 
       <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
         {describePattern(form)}
@@ -259,10 +312,12 @@ export function TransmitterSettings({
   initial,
   saving,
   onSave,
+  styled = false,
 }: {
   initial: TransmitterConfig;
   saving: boolean;
   onSave: (config: TransmitterConfig) => Promise<string | null>;
+  styled?: boolean;
 }) {
   const [form, setForm] = useState<TransmitterConfig>(initial);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -282,38 +337,55 @@ export function TransmitterSettings({
     window.setTimeout(() => setMessage(null), 4000);
   };
 
+  const sliders = (
+    <div className="grid gap-4">
+      <SliderField styled={styled} label="Re-ping interval (while blocked)" value={form.pingIntervalMs} min={500} max={6500} step={250} onChange={(v) => set({ pingIntervalMs: v })} format={seconds} />
+      <SliderField styled={styled} label="Debounce (ignore flicker)" value={form.debounceMs} min={0} max={1000} step={10} onChange={(v) => set({ debounceMs: v })} format={(v) => `${v} ms`} />
+    </div>
+  );
+
+  const description = (
+    <p className={styled ? "rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground" : "rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground"}>
+      Re-checks a blocked beam every {seconds(form.pingIntervalMs)}; must stay under the receiver's alert window.
+    </p>
+  );
+
+  if (styled) {
+    return (
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between">
+          <span className="font-label text-[10px] uppercase tracking-widest text-muted-foreground">
+            Transmitter · sensor
+          </span>
+          <Radio className="size-4 text-muted-foreground" />
+        </div>
+        {sliders}
+        {description}
+        <div className="flex items-center justify-between gap-3">
+          <SaveMessage message={message} />
+          <Button
+            className="ml-auto bg-tone-sound text-tone-sound-foreground hover:bg-tone-sound/90"
+            disabled={saving}
+            onClick={() => {
+              void handleSave();
+            }}
+          >
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            Save transmitter
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 rounded-lg border border-border p-4">
       <div className="flex items-center gap-2">
         <Radio className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-medium">Transmitter — sensor</h3>
       </div>
-
-      <div className="grid gap-4">
-        <SliderField
-          label="Re-ping interval (while blocked)"
-          value={form.pingIntervalMs}
-          min={500}
-          max={6500}
-          step={250}
-          onChange={(v) => set({ pingIntervalMs: v })}
-          format={seconds}
-        />
-        <SliderField
-          label="Debounce (ignore flicker)"
-          value={form.debounceMs}
-          min={0}
-          max={1000}
-          step={10}
-          onChange={(v) => set({ debounceMs: v })}
-          format={(v) => `${v} ms`}
-        />
-      </div>
-
-      <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-        Re-checks a blocked beam every {seconds(form.pingIntervalMs)}; must stay under the receiver's alert window.
-      </p>
-
+      {sliders}
+      {description}
       <div className="flex items-center justify-between gap-3">
         <SaveMessage message={message} />
         <Button

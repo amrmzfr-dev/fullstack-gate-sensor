@@ -365,11 +365,13 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
                 saving={saving === "receiver"}
                 onSave={saveReceiver}
                 onTest={testBuzzer}
+                styled
               />
               <TransmitterSettings
                 initial={config.transmitter}
                 saving={saving === "transmitter"}
                 onSave={saveTransmitter}
+                styled
               />
             </>
           ) : (
@@ -402,7 +404,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
               OTA update over MQTT — restricted to the admin account
             </p>
           </div>
-          <FirmwarePanel username={username} />
+          <FirmwarePanel username={username} styled />
         </div>
       </main>
 
