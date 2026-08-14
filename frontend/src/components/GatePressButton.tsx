@@ -13,7 +13,6 @@ const STALE_SECONDS = 3 * 60;
 // with nothing pressed.
 const COVER_W = 172;
 const COVER_H = 172;
-const COVER_TRAVEL = 150;
 const COVER_OPEN_X = 200;
 const COVER_OPEN_THRESHOLD = 0.45;
 const RELOCK_IDLE_MS = 8_000;
@@ -67,12 +66,19 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
   useEffect(() => clearRelockTimer, [clearRelockTimer]);
 
   // Window-level listeners in the capture phase so a parent scroll container
-  // never steals the drag once it has started on the cover.
+  // never steals the drag once it has started on the cover. dragX/baseX are
+  // both absolute positions (0 = closed, COVER_OPEN_X = open) so the same
+  // handler drives sliding it open from closed AND sliding it back closed
+  // by hand from open — direction just falls out of which edge the drag
+  // ends up closer to.
+  const baseX = useRef(0);
+
   const onCoverPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (coverOpen) return;
     e.preventDefault();
     e.stopPropagation();
     startX.current = e.clientX;
+    baseX.current = coverOpen ? COVER_OPEN_X : 0;
+    setDragX(baseX.current);
     setDragging(true);
 
     // touch-action:none and preventDefault() on the pointer events are not
@@ -89,18 +95,19 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
 
     const move = (ev: PointerEvent) => {
       ev.preventDefault();
-      setDragX(Math.max(0, Math.min(COVER_TRAVEL, ev.clientX - startX.current)));
+      setDragX(Math.max(0, Math.min(COVER_OPEN_X, baseX.current + (ev.clientX - startX.current))));
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", up, true);
       document.removeEventListener("touchmove", blockTouchScroll, true);
       setDragging(false);
-      const traveled = Math.max(0, Math.min(COVER_TRAVEL, ev.clientX - startX.current));
-      const open = traveled > COVER_TRAVEL * COVER_OPEN_THRESHOLD;
+      const final = Math.max(0, Math.min(COVER_OPEN_X, baseX.current + (ev.clientX - startX.current)));
+      const open = final > COVER_OPEN_X * COVER_OPEN_THRESHOLD;
       setCoverOpen(open);
       setDragX(0);
       if (open) armRelock(RELOCK_IDLE_MS);
+      else clearRelockTimer();
     };
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", up, true);
@@ -229,28 +236,35 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
           style={{
             position: "absolute", width: COVER_W, height: COVER_H, left: "50%", top: "50%",
             marginLeft: -86, marginTop: -98,
-            zIndex: 5, pointerEvents: coverOpen ? "none" : "auto",
+            // Stays interactive even once open — its hit area has moved
+            // clear of the button by then, and this is what lets it be
+            // grabbed and slid back closed by hand instead of only ever
+            // re-latching on its own timers.
+            zIndex: 5, pointerEvents: "auto",
           }}
         >
           <div
             role="button"
-            tabIndex={coverOpen ? -1 : 0}
-            aria-label="Slide open the safety cover to arm the gate button"
+            tabIndex={0}
+            aria-label={coverOpen ? "Slide the safety cover back closed" : "Slide open the safety cover to arm the gate button"}
             aria-pressed={coverOpen}
             onPointerDown={onCoverPointerDown}
             onKeyDown={(e) => {
-              if (coverOpen) return;
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              if (coverOpen) {
+                clearRelockTimer();
+                setCoverOpen(false);
+              } else {
                 setCoverOpen(true);
-                setDragX(0);
                 armRelock(RELOCK_IDLE_MS);
               }
+              setDragX(0);
             }}
             style={{
               position: "absolute", inset: 0, cursor: "grab", touchAction: "none", userSelect: "none",
               outline: "none",
-              transform: `translateX(${coverOpen ? COVER_OPEN_X : dragX}px)`,
+              transform: `translateX(${dragging ? dragX : coverOpen ? COVER_OPEN_X : 0}px)`,
               transition: dragging ? "none" : "transform .34s cubic-bezier(.3,.9,.3,1)",
             }}
           >
