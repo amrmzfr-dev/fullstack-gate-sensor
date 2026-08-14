@@ -133,12 +133,15 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
 
   const rim = `color-mix(in oklab, ${GK_ACCENT} 62%, #000)`;
   const rim2 = `color-mix(in oklab, ${GK_ACCENT} 40%, #000)`;
+  // The cap only needs its own surface shading — the extruded "wall" look
+  // below it comes from the single gradient wall element, not stacked
+  // shadow copies.
   const capShadow = pressed
     ? "inset 0 8px 16px rgba(0,0,0,.5)"
-    : `inset 0 3px 0 rgba(255,255,255,.45), inset 0 -6px 12px rgba(0,0,0,.18),0 4px 0 ${rim},0 8px 0 ${rim},0 12px 0 ${rim2},0 ${CYL}px 0 ${rim2},0 22px 22px rgba(0,0,0,.55)`;
+    : "inset 0 3px 0 rgba(255,255,255,.45), inset 0 -6px 12px rgba(0,0,0,.18)";
   const housingShadow = pressed
     ? "inset 0 10px 20px rgba(0,0,0,.6)"
-    : `0 4px 0 ${rim},0 8px 0 ${rim},0 12px 0 ${rim2},0 ${CYL}px 0 ${rim2},0 22px 22px rgba(0,0,0,.55),inset 0 8px 16px rgba(0,0,0,.55)`;
+    : "0 22px 22px rgba(0,0,0,.45)";
 
   const sub = pulsing
     ? "Sending…"
@@ -186,6 +189,17 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
             position: "absolute", left: "50%", top: "50%", width: 154, height: 154,
             margin: "-77px 0 0 -77px", borderRadius: 99, background: rim2,
             boxShadow: housingShadow, transition: "box-shadow .12s",
+          }}
+        />
+        {/* one real wall, not stacked shadow copies: a smooth light-to-dark
+            gradient continuing the housing's curve down, hidden once
+            pressed since there's nothing sitting above it to justify it */}
+        <div
+          style={{
+            position: "absolute", left: "50%", top: "50%", width: 154, height: CYL,
+            margin: `77px 0 0 -77px`, borderRadius: "0 0 77px 77px",
+            background: `linear-gradient(180deg, ${rim}, ${rim2})`,
+            opacity: pressed ? 0 : 1, transition: "opacity .12s",
           }}
         />
         {pulsing && (
