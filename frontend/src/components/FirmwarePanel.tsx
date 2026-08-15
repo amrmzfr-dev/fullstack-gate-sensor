@@ -99,10 +99,10 @@ function DeviceUploadCard({ status, uploading, onUpload, styled = false }: Devic
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border p-4">
+    <div className="space-y-3 rounded-[20px] border border-border bg-card p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">{DEVICE_LABELS[status.device]}</h3>
-        <span className="text-xs text-muted-foreground">
+        <h3 className="text-sm font-bold tracking-tight uppercase">{DEVICE_LABELS[status.device]}</h3>
+        <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[9px] text-secondary-foreground">
           {status.manifest ? `v${status.manifest.version}` : "No firmware yet"}
         </span>
       </div>
@@ -191,15 +191,9 @@ export function FirmwarePanel({ username, styled = false }: FirmwarePanelProps) 
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="text-sm font-medium">Firmware</h2>
-        <p className="text-xs text-muted-foreground">
-          Upload a .bin to OTA-update a device automatically over MQTT
-        </p>
-      </div>
+    <div className="space-y-3">
       {isAdmin ? (
-        <div className="space-y-3 px-6 py-4">
+        <>
           {loading && statuses.length === 0 ? (
             <p className="text-sm text-muted-foreground">Loading firmware status...</p>
           ) : (
@@ -213,13 +207,13 @@ export function FirmwarePanel({ username, styled = false }: FirmwarePanelProps) 
             ))
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
+        </>
       ) : (
-        <div className="flex items-start gap-2.5 px-6 py-6 text-sm text-muted-foreground">
+        <div className="flex items-start gap-2.5 rounded-[20px] border border-border bg-card p-4 text-sm text-muted-foreground">
           <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
           <p>Firmware updates are locked to the system admin account.</p>
         </div>
       )}
-    </section>
+    </div>
   );
 }

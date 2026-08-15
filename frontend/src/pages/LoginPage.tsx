@@ -1,17 +1,49 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { HttpError } from "@/lib/api";
+import { GK_ACCENT, GK_CARD, GK_HAIR, GK_INK, GK_MONO, GK_SANS } from "@/lib/gatekeepTheme";
+import { MOCK_MODE } from "@/lib/mockApi";
 
 interface LoginPageProps {
   onLogin: (username: string, password: string) => Promise<void>;
 }
 
+const inputStyle: CSSProperties = {
+  width: "100%",
+  height: 46,
+  borderRadius: 14,
+  border: `1px solid ${GK_HAIR}`,
+  background: GK_CARD,
+  color: "#fff",
+  font: `500 14px ${GK_SANS}`,
+  padding: "0 14px",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span
+        style={{
+          font: `500 10px/1.4 ${GK_MONO}`, letterSpacing: ".14em", textTransform: "uppercase",
+          color: "rgba(255,255,255,.4)",
+        }}
+      >
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
 export function LoginPage({ onLogin }: LoginPageProps) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  // Prefilled only in local mock mode (no real backend) so the delete-log
+  // feature — restricted to the "amir" account — is visible without having
+  // to type it in every time.
+  const [username, setUsername] = useState(MOCK_MODE ? "amir" : "");
+  const [password, setPassword] = useState(MOCK_MODE ? "dev" : "");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,76 +67,83 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center overflow-y-auto bg-background px-4 text-foreground">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2 text-center">
-          <img src="/favicon.svg" alt="" className="size-12" />
-          <h1 className="text-xl font-semibold tracking-tight">Gate Sensor</h1>
-          <p className="text-sm text-muted-foreground">
+    <div
+      style={{
+        minHeight: "100dvh", background: GK_INK, display: "flex", alignItems: "center",
+        justifyContent: "center", padding: 24, fontFamily: GK_SANS, boxSizing: "border-box",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", gap: 26 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center" }}>
+          <img src="/logo.png" alt="" style={{ width: 48, height: 48, borderRadius: 10 }} />
+          <h1 style={{ margin: 0, font: `800 26px/.95 ${GK_SANS}`, letterSpacing: "-.03em", color: "#fff", textTransform: "uppercase" }}>
+            Gate Sensor
+          </h1>
+          <p style={{ margin: 0, font: `400 11px/1.4 ${GK_MONO}`, letterSpacing: ".04em", color: "rgba(255,255,255,.4)" }}>
             Sign in to view and control the gate
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <label htmlFor="username" className="text-sm font-medium">
-              Username
-            </label>
-            <Input
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Field label="Username">
+            <input
               id="username"
               name="username"
               autoComplete="username"
               autoFocus
+              required
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              required
+              className="gk-input"
+              style={inputStyle}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1.5">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <div className="relative">
-              <Input
+          <Field label="Password">
+            <div style={{ position: "relative" }}>
+              <input
                 id="password"
                 name="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
+                required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="pr-9"
-                required
+                className="gk-input"
+                style={{ ...inputStyle, paddingRight: 40 }}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((current) => !current)}
                 aria-label={showPassword ? "Hide password" : "Show password"}
-                className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground hover:text-foreground"
+                style={{
+                  position: "absolute", right: 0, top: 0, bottom: 0, width: 40, display: "flex",
+                  alignItems: "center", justifyContent: "center", background: "none", border: "none",
+                  color: "rgba(255,255,255,.4)", cursor: "pointer",
+                }}
               >
-                {showPassword ? (
-                  <EyeOff className="size-4" />
-                ) : (
-                  <Eye className="size-4" />
-                )}
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-          </div>
+          </Field>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <span style={{ font: `400 11px ${GK_SANS}`, color: GK_ACCENT }}>{error}</span>
+          )}
 
-          <Button
+          <button
             type="submit"
-            className="h-10 w-full text-base"
             disabled={submitting}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              height: 46, borderRadius: 14, border: "none", cursor: submitting ? "default" : "pointer",
+              background: GK_ACCENT, color: GK_INK, font: `800 14px ${GK_SANS}`, letterSpacing: "-.01em",
+              textTransform: "uppercase", opacity: submitting ? 0.7 : 1,
+            }}
           >
-            {submitting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Lock className="size-4" />
-            )}
+            {submitting ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
             Sign in
-          </Button>
+          </button>
         </form>
       </div>
     </div>

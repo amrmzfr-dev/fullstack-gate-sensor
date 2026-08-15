@@ -3,6 +3,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: "Archivo", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, Menlo, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -27,47 +29,37 @@
   --color-ring: var(--ring);
 }
 
+/* Gatekeep brand palette — same accent/ink the mobile app shell uses (see
+   src/lib/gatekeepTheme.ts), applied through the shared shadcn tokens so
+   every existing Tailwind class (bg-background, bg-card, text-destructive,
+   etc.) picks it up with no changes to component markup.
+   Dark-only app now (see index.html's <html class="dark">) — no light
+   variant, so this is the only palette; `.dark` is kept (rather than folded
+   into :root) only because some components still use Tailwind's `dark:`
+   utility prefix, which needs a `.dark` ancestor to match. */
 :root {
-  --radius: 0.5rem;
-  --background: oklch(0.995 0.002 155);
-  --foreground: oklch(0.17 0.015 160);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.015 160);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.17 0.015 160);
-  --primary: oklch(0.55 0.16 150);
-  --primary-foreground: oklch(0.99 0.01 155);
-  --secondary: oklch(0.96 0.015 155);
-  --secondary-foreground: oklch(0.3 0.06 152);
-  --muted: oklch(0.965 0.008 155);
-  --muted-foreground: oklch(0.5 0.02 158);
-  --accent: oklch(0.95 0.035 152);
-  --accent-foreground: oklch(0.32 0.08 151);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.012 155);
-  --input: oklch(0.92 0.012 155);
-  --ring: oklch(0.62 0.14 150);
+  --radius: 0.85rem;
 }
 
 .dark {
-  --background: oklch(0.16 0.012 160);
-  --foreground: oklch(0.97 0.01 155);
-  --card: oklch(0.21 0.016 160);
-  --card-foreground: oklch(0.97 0.01 155);
-  --popover: oklch(0.21 0.016 160);
-  --popover-foreground: oklch(0.97 0.01 155);
-  --primary: oklch(0.87 0.23 149);
-  --primary-foreground: oklch(0.18 0.03 155);
-  --secondary: oklch(0.28 0.02 158);
-  --secondary-foreground: oklch(0.97 0.01 155);
-  --muted: oklch(0.28 0.02 158);
-  --muted-foreground: oklch(0.72 0.025 152);
-  --accent: oklch(0.3 0.04 152);
-  --accent-foreground: oklch(0.9 0.12 150);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.95 0.05 150 / 12%);
-  --input: oklch(0.95 0.05 150 / 16%);
-  --ring: oklch(0.75 0.17 150);
+  --background: #0c0c0c;
+  --foreground: #ffffff;
+  --card: #161616;
+  --card-foreground: #ffffff;
+  --popover: #161616;
+  --popover-foreground: #ffffff;
+  --primary: #ff5b41;
+  --primary-foreground: #0c0c0c;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ffffff;
+  --muted: #1a1a1a;
+  --muted-foreground: #9a9a9a;
+  --accent: #2a1712;
+  --accent-foreground: #ff8a73;
+  --destructive: #ff5b41;
+  --border: rgba(255, 255, 255, 0.09);
+  --input: rgba(255, 255, 255, 0.09);
+  --ring: #ff5b41;
 }
 
 @layer base {
@@ -77,6 +69,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: "Archivo", system-ui, sans-serif;
   }
 }
 
@@ -114,6 +107,18 @@
   height: 0;
 }
 
+/* Gatekeep-skinned text inputs (login page) — focus ring can't be done via
+   inline style since there's no :focus in the style object. */
+.gk-input {
+  transition: border-color 0.15s;
+}
+.gk-input:focus {
+  border-color: #ff5b41;
+}
+.gk-input::placeholder {
+  color: rgba(255, 255, 255, 0.28);
+}
+
 /* Pulse ring behind the gate press button while a signal is being sent. */
 @keyframes gcPulse {
   0% {
@@ -124,4 +129,35 @@
     transform: scale(1.35);
     opacity: 0;
   }
+}
+
+/* Desktop acknowledge button: a fast little rattle while the buzzer is
+   actually going off, on the outer wrapper (not the button itself) so it
+   doesn't fight with the button's own press translateY. */
+@keyframes buzzRattle {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  15% {
+    transform: translateX(-2px) rotate(-0.4deg);
+  }
+  30% {
+    transform: translateX(2px) rotate(0.4deg);
+  }
+  45% {
+    transform: translateX(-2px) rotate(-0.3deg);
+  }
+  60% {
+    transform: translateX(2px) rotate(0.3deg);
+  }
+  75% {
+    transform: translateX(-1px) rotate(0deg);
+  }
+  90% {
+    transform: translateX(1px) rotate(0deg);
+  }
+}
+.animate-buzz {
+  animation: buzzRattle 0.28s ease-in-out infinite;
 }

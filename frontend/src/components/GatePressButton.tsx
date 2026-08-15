@@ -1,24 +1,26 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { GK_ACCENT, GK_INK, GK_MONO, GK_SANS } from "@/lib/gatekeepTheme";
 
-// Steps the button walks through on each press. The controller is a dry relay
-// with no position feedback, so this is only a local hint — never a claim
-// about where the gate actually is. It goes stale after a few minutes idle,
-// since a fob or keypad press elsewhere would silently invalidate it.
-const STEPS = ["OPEN", "STOP", "CLOSE", "STOP"] as const;
-const STALE_SECONDS = 3 * 60;
+// The controller is a dry relay with no position feedback: each press just
+// steps it to the next state in an OPEN -> STOP -> CLOSE -> STOP cycle, but
+// this app has no way to know where in that cycle the gate currently sits —
+// a fob, keypad, or another session could have moved it without this app
+// hearing about it. So we never guess or display a "next press will X"
+// claim; a press could open, stop, or close depending on where the gate
+// already is.
 
 // Glass safety cover: physically blocks the button until slid open. Slide
-// only — no tap shortcut. Re-latches 1.4s after a press, or after 8s idle
-// with nothing pressed.
+// only — no tap shortcut. Re-latches 15s after a press (a follow-up press —
+// e.g. to stop the gate mid-travel — is common, so this isn't the 1-2s a
+// single-use cover would get), or after 15s idle with nothing pressed.
+// Slide it shut by hand any time before that if the wait feels too long.
 // 3px larger than the reference on every edge.
 const COVER_W = 178;
 const COVER_H = 178;
 const COVER_OPEN_X = 200;
 const COVER_OPEN_THRESHOLD = 0.45;
-const RELOCK_IDLE_MS = 8_000;
-const RELOCK_AFTER_PRESS_MS = 1_400;
-const CYL = 15;
+const RELOCK_IDLE_MS = 15_000;
+const RELOCK_AFTER_PRESS_MS = 15_000;
 
 interface GatePressButtonProps {
   pulsing: boolean;
@@ -26,7 +28,6 @@ interface GatePressButtonProps {
 }
 
 export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
-  const [presses, setPresses] = useState(0);
   const [lastPressAt, setLastPressAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [pressed, setPressed] = useState(false);
@@ -117,7 +118,6 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
   const handleClick = () => {
     if (!coverOpen || pulsing) return;
     const pressedAt = Date.now();
-    setPresses((p) => p + 1);
     setLastPressAt(pressedAt);
     setNow(pressedAt);
     armRelock(RELOCK_AFTER_PRESS_MS);
@@ -125,17 +125,10 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
   };
 
   const secsAgo = lastPressAt === null ? null : Math.max(0, Math.round((now - lastPressAt) / 1000));
-  const stale = presses > 0 && secsAgo !== null && secsAgo > STALE_SECONDS;
-  const idx = presses === 0 || stale ? -1 : (presses - 1) % STEPS.length;
-  const nextIdx = idx === -1 ? -1 : (idx + 1) % STEPS.length;
 
   const ago = (s: number | null) => (s === null ? "" : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`);
 
-  const rim = `color-mix(in oklab, ${GK_ACCENT} 62%, #000)`;
   const rim2 = `color-mix(in oklab, ${GK_ACCENT} 40%, #000)`;
-  // The cap only needs its own surface shading — the extruded "wall" look
-  // below it comes from the single gradient wall element, not stacked
-  // shadow copies.
   const capShadow = pressed
     ? "inset 0 8px 16px rgba(0,0,0,.5)"
     : "inset 0 3px 0 rgba(255,255,255,.45), inset 0 -6px 12px rgba(0,0,0,.18)";
@@ -143,21 +136,13 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
     ? "inset 0 10px 20px rgba(0,0,0,.6)"
     : "0 22px 22px rgba(0,0,0,.45)";
 
-  const sub = pulsing
-    ? "Sending…"
-    : !coverOpen
-      ? "Covered"
-      : nextIdx === -1
-        ? "Open · stop · close"
-        : `Next: ${STEPS[nextIdx].toLowerCase()}`;
+  const sub = pulsing ? "Sending…" : !coverOpen ? "Covered" : "Open · Stop · Close";
 
   const footer = !coverOpen
     ? "Safety cover closed · slide the glass to arm the button"
-    : nextIdx === -1
-      ? "Each press steps the gate to its next state · a press after a stop reverses it"
-      : `Sent ${ago(secsAgo)} · next press should ${STEPS[nextIdx].toLowerCase()}${
-          nextIdx % 2 ? " the gate mid-travel" : " it"
-        }`;
+    : lastPressAt === null
+      ? "Opens, stops, or closes the gate — there's no position sensor, so it depends on where the gate already is"
+      : `Sent ${ago(secsAgo)} · result depends on the gate's position, not what was pressed last`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
@@ -189,17 +174,6 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
             position: "absolute", left: "50%", top: "50%", width: 154, height: 154,
             margin: "-77px 0 0 -77px", borderRadius: 99, background: rim2,
             boxShadow: housingShadow, transition: "box-shadow .12s",
-          }}
-        />
-        {/* one real wall, not stacked shadow copies: a smooth light-to-dark
-            gradient continuing the housing's curve down, hidden once
-            pressed since there's nothing sitting above it to justify it */}
-        <div
-          style={{
-            position: "absolute", left: "50%", top: "50%", width: 154, height: CYL,
-            margin: `77px 0 0 -77px`, borderRadius: "0 0 77px 77px",
-            background: `linear-gradient(180deg, ${rim}, ${rim2})`,
-            opacity: pressed ? 0 : 1, transition: "opacity .12s",
           }}
         />
         {pulsing && (
@@ -356,31 +330,14 @@ export function GatePressButton({ pulsing, onPress }: GatePressButtonProps) {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        {STEPS.map((step, i) => (
-          <div key={`${step}-${i}`} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div
-              style={{
-                padding: "5px 9px", borderRadius: 99,
-                background: i === nextIdx ? GK_ACCENT : "#1A1A1A",
-                border: `1px solid ${i === nextIdx ? GK_ACCENT : "rgba(255,255,255,.1)"}`,
-                font: `500 9px ${GK_MONO}`, letterSpacing: ".1em",
-                color: i === nextIdx ? GK_INK : "rgba(255,255,255,.4)", whiteSpace: "nowrap",
-              }}
-            >
-              {step}
-            </div>
-            {i < STEPS.length - 1 && (
-              <span style={{ font: `400 10px ${GK_MONO}`, color: "rgba(255,255,255,.25)" }}>→</span>
-            )}
-          </div>
-        ))}
-      </div>
-
+      {/* Fixed to exactly 2 lines' worth of height (10px / 1.4 line-height)
+          regardless of how long the message text is, so nothing below this
+          button shifts position when it changes between a 1-line and
+          2-line message. */}
       <span
         style={{
           font: `400 10px/1.4 ${GK_MONO}`, color: "rgba(255,255,255,.36)",
-          textAlign: "center", maxWidth: 290,
+          textAlign: "center", maxWidth: 290, height: 28, overflow: "hidden",
         }}
       >
         {footer}

@@ -1,4 +1,4 @@
-import { apiGet } from "@/lib/api";
+import { apiDelete, apiGet } from "@/lib/api";
 import type { DeviceLiveStatus, GateControlEventRecord, GateStatus } from "@/types";
 
 export async function fetchGateStatus(): Promise<GateStatus> {
@@ -39,4 +39,10 @@ export async function fetchGateControlEvents(
   limit = 50,
 ): Promise<GateControlEventRecord[]> {
   return apiGet<GateControlEventRecord[]>(`/gate/control-events?limit=${limit}`);
+}
+
+// Backend restricts this to one account regardless of who the frontend lets
+// click the button — see GateController.DeleteControlEventAsync.
+export async function deleteGateControlEvent(id: string): Promise<void> {
+  return apiDelete(`/gate/control-events/${id}`);
 }

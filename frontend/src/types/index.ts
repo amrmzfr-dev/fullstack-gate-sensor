@@ -1,5 +1,3 @@
-export type Theme = "light" | "dark";
-
 export interface ApiError {
   message: string;
   status: number;

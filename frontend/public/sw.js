@@ -1,5 +1,5 @@
-const CACHE = "gate-sensor-v1";
-const SHELL = ["/", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
+const CACHE = "gate-sensor-v2";
+const SHELL = ["/", "/favicon.png", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

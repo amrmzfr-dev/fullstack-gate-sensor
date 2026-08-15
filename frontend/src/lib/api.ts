@@ -1,8 +1,13 @@
 import { clearSession, getToken } from "@/lib/auth";
+import { MOCK_MODE, mockFetch } from "@/lib/mockApi";
 import type { ApiError } from "@/types";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ?? "http://localhost:5115/api";
+
+function doFetch(path: string, init: RequestInit): Promise<Response> {
+  return MOCK_MODE ? mockFetch(path, init) : fetch(`${API_BASE_URL}${path}`, init);
+}
 
 export class HttpError extends Error implements ApiError {
   status: number;
@@ -37,7 +42,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await doFetch(path, {
     method: "GET",
     headers: { Accept: "application/json", ...authHeaders() },
   });
@@ -49,7 +54,7 @@ export async function apiPost<T, B = unknown>(
   path: string,
   body: B,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await doFetch(path, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -66,7 +71,7 @@ export async function apiPut<T, B = unknown>(
   path: string,
   body: B,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await doFetch(path, {
     method: "PUT",
     headers: {
       Accept: "application/json",
@@ -83,7 +88,7 @@ export async function apiPostForm<T>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await doFetch(path, {
     method: "POST",
     headers: { Accept: "application/json", ...authHeaders() },
     body: formData,
@@ -93,7 +98,7 @@ export async function apiPostForm<T>(
 }
 
 export async function apiDelete(path: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await doFetch(path, {
     method: "DELETE",
     headers: { Accept: "application/json", ...authHeaders() },
   });

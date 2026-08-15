@@ -12,17 +12,7 @@ import {
   GK_SANS,
   GK_YELLOW,
 } from "@/lib/gatekeepTheme";
-import type { DeviceConfig, ReceiverConfig, TransmitterConfig } from "@/types";
-
-type SaveTarget = "receiver" | "transmitter" | null;
-
-interface DeviceSettingsPanelProps {
-  config: DeviceConfig;
-  saving: SaveTarget;
-  onSaveReceiver: (config: ReceiverConfig) => Promise<string | null>;
-  onSaveTransmitter: (config: TransmitterConfig) => Promise<string | null>;
-  onTestReceiver: () => Promise<void>;
-}
+import type { ReceiverConfig, TransmitterConfig } from "@/types";
 
 type BeepPresetValues = Pick<
   ReceiverConfig,
@@ -275,14 +265,14 @@ export function ReceiverSettings({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border p-4">
+    <div className="space-y-4 rounded-[20px] border border-border bg-card p-4">
       <div className="flex items-center gap-2">
         <Volume2 className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">Receiver — buzzer</h3>
+        <h3 className="text-sm font-bold tracking-tight uppercase">Receiver — buzzer</h3>
       </div>
 
       <div className="space-y-1.5">
-        <span className="text-xs font-medium text-foreground">Beep style</span>
+        <span className="font-mono text-[10px] font-medium tracking-[.1em] text-muted-foreground uppercase">Beep style</span>
         <div className="flex flex-wrap gap-1.5">
           {BEEP_PRESETS.map((preset) => (
             <Button
@@ -399,10 +389,10 @@ export function TransmitterSettings({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border p-4">
+    <div className="space-y-4 rounded-[20px] border border-border bg-card p-4">
       <div className="flex items-center gap-2">
         <Radio className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">Transmitter — sensor</h3>
+        <h3 className="text-sm font-bold tracking-tight uppercase">Transmitter — sensor</h3>
       </div>
       {sliders}
       <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
@@ -422,37 +412,5 @@ export function TransmitterSettings({
         </Button>
       </div>
     </div>
-  );
-}
-
-export function DeviceSettingsPanel({
-  config,
-  saving,
-  onSaveReceiver,
-  onSaveTransmitter,
-  onTestReceiver,
-}: DeviceSettingsPanelProps) {
-  return (
-    <section className="rounded-lg border border-border bg-card">
-      <div className="border-b border-border px-6 py-4">
-        <h2 className="text-sm font-medium">Behaviour settings</h2>
-        <p className="text-xs text-muted-foreground">
-          Change how the devices behave — applied live over MQTT, no reflash needed
-        </p>
-      </div>
-      <div className="grid gap-4 px-6 py-4 lg:grid-cols-2">
-        <ReceiverSettings
-          initial={config.receiver}
-          saving={saving === "receiver"}
-          onSave={onSaveReceiver}
-          onTest={onTestReceiver}
-        />
-        <TransmitterSettings
-          initial={config.transmitter}
-          saving={saving === "transmitter"}
-          onSave={onSaveTransmitter}
-        />
-      </div>
-    </section>
   );
 }
