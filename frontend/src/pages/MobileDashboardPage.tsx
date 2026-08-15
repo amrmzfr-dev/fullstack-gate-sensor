@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { LogOut } from "lucide-react";
 
 import {
   ReceiverSettings,
@@ -536,11 +537,11 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
               aria-label="Sign out"
               style={{
                 width: 36, height: 36, borderRadius: 99, background: "#1B1B1B",
-                border: "1px solid rgba(255,255,255,.1)", color: GK_ACCENT, fontSize: 15,
+                border: "1px solid rgba(255,255,255,.1)", color: GK_ACCENT,
                 display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flex: "none",
               }}
             >
-              ⏻
+              <LogOut size={16} />
             </button>
           </div>
         </div>
@@ -736,7 +737,7 @@ export function MobileDashboardPage({ username, onLogout }: MobileDashboardPageP
               {username ? `Signed in as ${capitalize(username)}` : "End this session"}
             </span>
           </div>
-          <span style={{ fontSize: 16, color: GK_ACCENT }}>⏻</span>
+          <LogOut size={18} color={GK_ACCENT} />
         </div>
         <div style={{ height: 8 }} />
       </div>
