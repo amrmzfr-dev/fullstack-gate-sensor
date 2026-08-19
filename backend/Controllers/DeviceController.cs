@@ -15,6 +15,7 @@ public class DeviceController(
     AppDbContext dbContext,
     IDeviceStatusStore deviceStatusStore,
     IDeviceConfigStore deviceConfigStore,
+    IGatePositionStore gatePositionStore,
     IMqttPublisher mqttPublisher) : ControllerBase
 {
     // The re-ping interval must land before the receiver's alert window lapses,
@@ -44,6 +45,7 @@ public class DeviceController(
         {
             Receiver = await deviceConfigStore.GetReceiverConfigAsync(cancellationToken),
             Transmitter = await deviceConfigStore.GetTransmitterConfigAsync(cancellationToken),
+            Position = await deviceConfigStore.GetPositionConfigAsync(cancellationToken),
         });
     }
 
@@ -122,6 +124,84 @@ public class DeviceController(
 
         return Ok(config);
     }
+
+    // Calibration for the AS5600 gate-position sensor. Call this with the gate
+    // physically at its closed limit. IMPORTANT: "closed" and "open" must both
+    // be recorded in the same position-sensor uptime session — don't let it
+    // reboot in between — because OpenTicksSpan is computed as a delta between
+    // the two readings' cumulativeTicks, which only share a common reference
+    // within one boot (see PositionConfig's doc comment).
+    [HttpPost("position/calibrate/closed")]
+    public async Task<ActionResult<PositionConfig>> CalibratePositionClosedAsync(CancellationToken cancellationToken)
+    {
+        var snapshot = await gatePositionStore.GetAsync(cancellationToken);
+        if (snapshot.RawAngle is null || snapshot.CumulativeTicks is null)
+        {
+            return BadRequest("Position sensor has not reported any readings yet.");
+        }
+
+        var current = await deviceConfigStore.GetPositionConfigAsync(cancellationToken);
+        var updated = new PositionConfig
+        {
+            RawClosed = snapshot.RawAngle.Value,
+            RawOpen = current.RawOpen,
+            OpenTicksSpan = 0, // recalibrating "closed" invalidates any previously recorded "open" span
+            PollIntervalMs = current.PollIntervalMs,
+            ClosedCumulativeTicksAtCalibration = snapshot.CumulativeTicks.Value,
+        };
+
+        await deviceConfigStore.SetPositionConfigAsync(updated, cancellationToken);
+        await PublishPositionConfigAsync(updated, cancellationToken);
+
+        return Ok(updated);
+    }
+
+    // Call this with the gate physically at its fully-open limit, after
+    // calibrate/closed has already been called in the same session.
+    [HttpPost("position/calibrate/open")]
+    public async Task<ActionResult<PositionConfig>> CalibratePositionOpenAsync(CancellationToken cancellationToken)
+    {
+        var snapshot = await gatePositionStore.GetAsync(cancellationToken);
+        if (snapshot.RawAngle is null || snapshot.CumulativeTicks is null)
+        {
+            return BadRequest("Position sensor has not reported any readings yet.");
+        }
+
+        var current = await deviceConfigStore.GetPositionConfigAsync(cancellationToken);
+        if (current.RawClosed < 0 || current.ClosedCumulativeTicksAtCalibration is null)
+        {
+            return BadRequest("Record the closed position first.");
+        }
+
+        var openTicksSpan = snapshot.CumulativeTicks.Value - current.ClosedCumulativeTicksAtCalibration.Value;
+        if (openTicksSpan == 0)
+        {
+            return BadRequest(
+                "Open reading matches the closed reference — the gate doesn't appear to have moved. " +
+                "Make sure the position sensor hasn't rebooted since you recorded the closed position.");
+        }
+
+        var updated = new PositionConfig
+        {
+            RawClosed = current.RawClosed,
+            RawOpen = snapshot.RawAngle.Value,
+            OpenTicksSpan = openTicksSpan,
+            PollIntervalMs = current.PollIntervalMs,
+            ClosedCumulativeTicksAtCalibration = current.ClosedCumulativeTicksAtCalibration,
+        };
+
+        await deviceConfigStore.SetPositionConfigAsync(updated, cancellationToken);
+        await PublishPositionConfigAsync(updated, cancellationToken);
+
+        return Ok(updated);
+    }
+
+    private Task PublishPositionConfigAsync(PositionConfig config, CancellationToken cancellationToken) =>
+        mqttPublisher.PublishAsync(
+            MqttTopics.DeviceConfig("position"),
+            JsonSerializer.Serialize(config, PayloadJson),
+            retain: true,
+            cancellationToken);
 
     // Pulses the gate-control relay on the transmitter. The gate motor board
     // cycles open -> stop -> close by itself on successive triggers, so this is

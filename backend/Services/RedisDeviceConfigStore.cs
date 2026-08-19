@@ -11,6 +11,7 @@ public sealed class RedisDeviceConfigStore(IConnectionMultiplexer redis) : IDevi
 {
     private const string ReceiverKey = "gate:config:receiver";
     private const string TransmitterKey = "gate:config:transmitter";
+    private const string PositionKey = "gate:config:position";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -38,6 +39,17 @@ public sealed class RedisDeviceConfigStore(IConnectionMultiplexer redis) : IDevi
         return JsonSerializer.Deserialize<TransmitterConfig>(value.ToString(), JsonOptions) ?? new TransmitterConfig();
     }
 
+    public async Task<PositionConfig> GetPositionConfigAsync(CancellationToken cancellationToken)
+    {
+        var value = await Database.StringGetAsync(PositionKey);
+        if (!value.HasValue)
+        {
+            return new PositionConfig();
+        }
+
+        return JsonSerializer.Deserialize<PositionConfig>(value.ToString(), JsonOptions) ?? new PositionConfig();
+    }
+
     public async Task SetReceiverConfigAsync(ReceiverConfig config, CancellationToken cancellationToken)
     {
         await Database.StringSetAsync(ReceiverKey, JsonSerializer.Serialize(config, JsonOptions));
@@ -46,5 +58,10 @@ public sealed class RedisDeviceConfigStore(IConnectionMultiplexer redis) : IDevi
     public async Task SetTransmitterConfigAsync(TransmitterConfig config, CancellationToken cancellationToken)
     {
         await Database.StringSetAsync(TransmitterKey, JsonSerializer.Serialize(config, JsonOptions));
+    }
+
+    public async Task SetPositionConfigAsync(PositionConfig config, CancellationToken cancellationToken)
+    {
+        await Database.StringSetAsync(PositionKey, JsonSerializer.Serialize(config, JsonOptions));
     }
 }

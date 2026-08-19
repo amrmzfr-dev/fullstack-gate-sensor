@@ -19,7 +19,12 @@ public static class MqttTopics
     // One-shot command channel for the transmitter (gate relay pulse).
     public const string TransmitterCommand = "gate/transmitter/command";
 
-    public static readonly string[] OtaDevices = ["transmitter", "receiver"];
+    // Live gate-open percentage stream from the position sensor. Not retained —
+    // it's a continuous stream (published every pollIntervalMs), not a
+    // one-shot command, so a fresh subscriber just waits for the next tick.
+    public const string PositionTelemetry = "gate/position/telemetry";
+
+    public static readonly string[] OtaDevices = ["transmitter", "receiver", "position"];
 
     public static string FirmwareLatest(string device) => $"firmware/{device}/latest";
 
@@ -51,3 +56,10 @@ public sealed record DeviceStatusPayload(
     [property: JsonPropertyName("online")] bool Online,
     [property: JsonPropertyName("version")] string? Version,
     [property: JsonPropertyName("ip")] string? Ip);
+
+public sealed record PositionTelemetryPayload(
+    [property: JsonPropertyName("rawAngle")] int RawAngle,
+    [property: JsonPropertyName("cumulativeTicks")] int CumulativeTicks,
+    [property: JsonPropertyName("percentOpen")] int PercentOpen,
+    [property: JsonPropertyName("positionKnown")] bool PositionKnown,
+    [property: JsonPropertyName("magnetOk")] bool MagnetOk);

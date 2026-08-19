@@ -15,6 +15,7 @@ public sealed class MqttRelayHostedService(
     IWebHostEnvironment webHostEnvironment,
     IDeviceStatusStore deviceStatusStore,
     IDeviceConfigStore deviceConfigStore,
+    IGatePositionStore gatePositionStore,
     ILogger<MqttRelayHostedService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -52,6 +53,10 @@ public sealed class MqttRelayHostedService(
                 else if (MqttTopics.DeviceFromStatusTopic(topic) is { } statusDevice)
                 {
                     await HandleDeviceStatusAsync(statusDevice, payloadText, stoppingToken);
+                }
+                else if (string.Equals(topic, MqttTopics.PositionTelemetry, StringComparison.Ordinal))
+                {
+                    await HandlePositionTelemetryAsync(payloadText, stoppingToken);
                 }
             }
             catch (Exception ex)
@@ -96,14 +101,18 @@ public sealed class MqttRelayHostedService(
                         .WithTopicFilter(filter => filter
                             .WithTopic(MqttTopics.DeviceStatusWildcard)
                             .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
+                        .WithTopicFilter(filter => filter
+                            .WithTopic(MqttTopics.PositionTelemetry)
+                            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
                         .Build();
 
                     await mqttClient.SubscribeAsync(subscribeOptions, stoppingToken);
                     logger.LogInformation(
-                        "MQTT relay connected and subscribed to {TriggerTopic}, {AckTopic} and {StatusTopic}",
+                        "MQTT relay connected and subscribed to {TriggerTopic}, {AckTopic}, {StatusTopic} and {TelemetryTopic}",
                         MqttTopics.Trigger,
                         MqttTopics.ReceiverAck,
-                        MqttTopics.DeviceStatusWildcard);
+                        MqttTopics.DeviceStatusWildcard,
+                        MqttTopics.PositionTelemetry);
 
                     await PublishFirmwareManifestsAsync(mqttClient, stoppingToken);
                     await PublishDeviceConfigsAsync(mqttClient, stoppingToken);
@@ -235,6 +244,29 @@ public sealed class MqttRelayHostedService(
             payload.Ip);
     }
 
+    private async Task HandlePositionTelemetryAsync(string payloadText, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.Deserialize<PositionTelemetryPayload>(payloadText, JsonOptions);
+        if (payload is null)
+        {
+            logger.LogWarning("Ignoring unparseable position telemetry");
+            return;
+        }
+
+        if (!payload.MagnetOk)
+        {
+            logger.LogWarning("Position sensor reports magnet not detected or out of range");
+        }
+
+        await gatePositionStore.SetAsync(
+            payload.RawAngle,
+            payload.CumulativeTicks,
+            payload.PercentOpen,
+            payload.PositionKnown,
+            payload.MagnetOk,
+            cancellationToken);
+    }
+
     // Devices subscribe to firmware/{device}/latest once at boot. Publishing
     // retained means a device gets the current manifest immediately on
     // connect (no polling), and a live push the moment a new manifest lands
@@ -276,13 +308,16 @@ public sealed class MqttRelayHostedService(
     {
         var receiver = await deviceConfigStore.GetReceiverConfigAsync(cancellationToken);
         var transmitter = await deviceConfigStore.GetTransmitterConfigAsync(cancellationToken);
+        var position = await deviceConfigStore.GetPositionConfigAsync(cancellationToken);
 
         await PublishRetainedAsync(mqttClient, MqttTopics.DeviceConfig("receiver"),
             JsonSerializer.Serialize(receiver, PayloadJson), cancellationToken);
         await PublishRetainedAsync(mqttClient, MqttTopics.DeviceConfig("transmitter"),
             JsonSerializer.Serialize(transmitter, PayloadJson), cancellationToken);
+        await PublishRetainedAsync(mqttClient, MqttTopics.DeviceConfig("position"),
+            JsonSerializer.Serialize(position, PayloadJson), cancellationToken);
 
-        logger.LogInformation("Published device configs (receiver, transmitter)");
+        logger.LogInformation("Published device configs (receiver, transmitter, position)");
     }
 
     private static Task PublishRetainedAsync(

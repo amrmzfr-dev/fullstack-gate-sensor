@@ -11,7 +11,8 @@ namespace GateSensor.Api.Controllers;
 [Route("api/gate")]
 public class GateController(
     AppDbContext dbContext,
-    IGateAlertState alertState) : ControllerBase
+    IGateAlertState alertState,
+    IGatePositionStore gatePositionStore) : ControllerBase
 {
     // Deleting press-log entries is restricted to this one account — not a
     // role or permission, just a hardcoded allowlist, by design (see the
@@ -30,6 +31,13 @@ public class GateController(
             AlertActive = alertActive,
             UpdatedAt = updatedAt,
         });
+    }
+
+    // How far open the gate physically is, from the AS5600 position sensor.
+    [HttpGet("position")]
+    public async Task<ActionResult<GatePositionSnapshot>> GetPositionAsync(CancellationToken cancellationToken)
+    {
+        return Ok(await gatePositionStore.GetAsync(cancellationToken));
     }
 
     [HttpGet("events")]
